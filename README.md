@@ -12,7 +12,7 @@ A graphical user interface (GUI) tool for interacting with Modpoll, a Modbus mas
 - **Advanced Settings**: Access advanced Modbus settings through an intuitive interface.
 
 <p align="center">
-    <img width="900" src="https://i.ibb.co/SyFVh35/Skjermbilde-2024-11-18-142520.png" alt="Material Bread logo">
+    <img width="900" src="https://i.ibb.co/hst67zM/Skjermbilde-2024-11-18-142520.png" alt="Material Bread logo">
 </p>
 
 ## Requirements
