@@ -11,6 +11,10 @@ A graphical user interface (GUI) tool for interacting with Modpoll, a Modbus mas
 - **Status Indicator**: Visual feedback for polling status with color-coded indicators.
 - **Advanced Settings**: Access advanced Modbus settings through an intuitive interface.
 
+<p align="center">
+    <img width="300" src="https://i.ibb.co/SyFVh35/Skjermbilde-2024-11-18-142520.png" alt="Material Bread logo">
+</p>
+
 ## Requirements
 
 - **Python 3.x**
