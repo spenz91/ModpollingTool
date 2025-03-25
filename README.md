@@ -23,7 +23,7 @@ A graphical user interface (GUI) tool for interacting with Modpoll, a Modbus mas
 
 ## Installation
 
-1. **Clone or [Download the .exe from the Repository](https://github.com/spenz91/ModpollingTool/releases/tag/modpoll)**
+1. **Clone or [Download the .exe from releases](https://github.com/spenz91/ModpollingTool/releases/tag/modpoll)**
 
    - Clone the repository using Git:
 
