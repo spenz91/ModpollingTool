@@ -106,6 +106,10 @@ class ModpollingTool:
 
         # For numbering specific log messages
         self.message_counts = {}
+        
+        # Poll attempt tracking
+        self.poll_attempt_counter = 0
+        self.current_start_reference = None
 
         # Initialize blinking variables
         self.blinking = False
@@ -505,10 +509,14 @@ class ModpollingTool:
             f"-t{register_data_type}",
         ]
 
-        # Start polling thread
-        threading.Thread(target=self.run_modpoll, args=(arguments,), daemon=True).start()
+        # Reset attempt counter for a new polling session and store first reference
+        self.poll_attempt_counter = 0
+        self.current_start_reference = start_reference
 
-    def run_modpoll(self, arguments):
+        # Start polling thread
+        threading.Thread(target=self.run_modpoll, args=(arguments, com_port, baudrate, parity, databits, stopbits, adresse, start_reference, num_registers, register_data_type), daemon=True).start()
+
+    def run_modpoll(self, arguments, com_port, baudrate, parity, databits, stopbits, adresse, start_reference, num_registers, register_data_type):
         self.is_polling = True
         self.update_buttons()
         self.log_queue.put(('info', "Polling started..."))
@@ -530,6 +538,7 @@ class ModpollingTool:
 
             # Log the command
             self.log_queue.put(('info', f"Running command: {' '.join(cmd)}"))
+            self.log_queue.put(('info', f"Parameters: COM={com_port}, Baud={baudrate}, Parity={parity}, DataBits={databits}, StopBits={stopbits}, Addr={adresse}, Ref={start_reference}, Count={num_registers}, Type={register_data_type}"))
 
             # Prevent a new window from opening
             startupinfo = subprocess.STARTUPINFO()
@@ -570,6 +579,10 @@ class ModpollingTool:
             self.update_buttons()
             self.log_queue.put(('info', "Polling finished."))
 
+    def _increment_attempt(self):
+        self.poll_attempt_counter += 1
+        self.log_queue.put(('info', f"Attempt {self.poll_attempt_counter}"))
+
     def read_stream(self, stream):
         for line in iter(stream.readline, ''):
             line = line.strip()
@@ -582,6 +595,7 @@ class ModpollingTool:
 
                 # Handle "Reply time-out!"
                 if "reply time-out!" in lower_line:
+                    self._increment_attempt()
                     combined_message = "Reply time-out!\nEquipment does not respond."
                     self.log_queue.put(('error', combined_message))
                     self.trigger_status_indicator('red')
@@ -609,33 +623,30 @@ class ModpollingTool:
 
                 # Handle "illegal function exception response!"
                 elif "illegal function exception response!" in lower_line:
+                    self._increment_attempt()
                     base_message = "Illegal Function Exception Response!"
-                    count = self.message_counts.get(base_message, 0) + 1
-                    self.message_counts[base_message] = count
-                    numbered_message = f"{base_message} [{count}]"
-                    self.log_queue.put(('info', numbered_message))
+                    self.log_queue.put(('info', base_message))
                     self.trigger_status_indicator('green')
 
                 # Handle "illegal data address exception response!"
                 elif "illegal data address exception response!" in lower_line:
+                    self._increment_attempt()
                     base_message = "Illegal Data Address Exception Response!"
-                    count = self.message_counts.get(base_message, 0) + 1
-                    self.message_counts[base_message] = count
-                    numbered_message = f"{base_message} [{count}]"
-                    self.log_queue.put(('info', numbered_message))
+                    self.log_queue.put(('info', base_message))
                     self.trigger_status_indicator('green')
 
                 # Handle "illegal data value exception response!"
                 elif "illegal data value exception response!" in lower_line:
+                    self._increment_attempt()
                     base_message = "Illegal Data Value Exception Response!"
-                    count = self.message_counts.get(base_message, 0) + 1
-                    self.message_counts[base_message] = count
-                    numbered_message = f"{base_message} [{count}]"
-                    self.log_queue.put(('info', numbered_message))
+                    self.log_queue.put(('info', base_message))
                     self.trigger_status_indicator('green')
 
                 # Handle lines like "[100]: 0"
                 elif re.match(r'\[\d+\]', line):
+                    # Detect start of a new polling cycle using the first reference
+                    if self.current_start_reference and line.startswith(f"[{self.current_start_reference}]"):
+                        self._increment_attempt()
                     base_message = line
                     count = self.message_counts.get(base_message, 0) + 1
                     self.message_counts[base_message] = count
