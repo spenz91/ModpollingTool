@@ -145,15 +145,31 @@ class ModpollingTool:
         # Equipment Frame (Column 0)
         self.frame_equipment = ttk.LabelFrame(main_frame, text="Equipment")
         self.frame_equipment.grid(row=0, column=0, sticky="NSEW", padx=5, pady=5)
-        self.frame_equipment.rowconfigure(0, weight=1)
+        self.frame_equipment.rowconfigure(1, weight=1)  # Changed from 0 to 1 to make room for search
         self.frame_equipment.columnconfigure(0, weight=1)
 
-        # Create a frame to hold the Listbox and Scrollbar
+        # Search Frame (Row 0)
+        search_frame = ttk.Frame(self.frame_equipment)
+        search_frame.grid(row=0, column=0, sticky="EW", padx=5, pady=(5, 0))
+        search_frame.columnconfigure(0, weight=1)
+
+        # Search Label and Entry
+        ttk.Label(search_frame, text="Search:").pack(side=tk.LEFT, padx=(0, 5))
+        self.search_var = tk.StringVar()
+        self.search_var.trace('w', self.filter_equipment)  # Bind to search changes
+        self.entry_search = ttk.Entry(search_frame, textvariable=self.search_var, width=20)
+        self.entry_search.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        # Clear search button
+        btn_clear_search = ttk.Button(search_frame, text="X", width=3, command=self.clear_search)
+        btn_clear_search.pack(side=tk.RIGHT)
+
+        # Create a frame to hold the Listbox and Scrollbar (Row 1)
         listbox_frame = ttk.Frame(self.frame_equipment)
-        listbox_frame.grid(row=0, column=0, sticky="NSEW", padx=5, pady=5)
+        listbox_frame.grid(row=1, column=0, sticky="NSEW", padx=5, pady=5)
 
         # Equipment Listbox
-        self.listbox_equipment = tk.Listbox(listbox_frame, height=20)
+        self.listbox_equipment = tk.Listbox(listbox_frame, height=18)  # Reduced height to make room for search
         self.listbox_equipment.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Scrollbar for the Listbox
@@ -163,16 +179,31 @@ class ModpollingTool:
         # Configure the Listbox to work with the Scrollbar
         self.listbox_equipment.config(yscrollcommand=scrollbar.set)
 
+        # Store original equipment list for filtering
+        self.all_equipment = sorted(self.equipment_settings.keys())
+        
         # Populate equipment list in alphabetical order
-        for equipment in sorted(self.equipment_settings.keys()):
+        for equipment in self.all_equipment:
             self.listbox_equipment.insert(tk.END, equipment)
 
         # Bind double-click event
         self.listbox_equipment.bind('<Double-1>', self.select_equipment)
+        
+        # Bind Enter key to select equipment
+        self.listbox_equipment.bind('<Return>', self.select_equipment)
+        
+        # Bind Enter key in search field to select first item
+        self.entry_search.bind('<Return>', self.select_first_equipment)
+        
+        # Bind Ctrl+F to focus search field
+        self.root.bind('<Control-f>', self.focus_search)
+        
+        # Focus search field on startup
+        self.entry_search.focus_set()
 
         # Select Button below the Listbox
         btn_select = ttk.Button(self.frame_equipment, text="Select", command=self.select_equipment)
-        btn_select.grid(row=1, column=0, pady=(0, 10))
+        btn_select.grid(row=2, column=0, pady=(0, 10))  # Changed from row=1 to row=2
 
         # Settings Frame with Notebook for Basic and Advanced Tabs (Column 1)
         self.frame_settings = ttk.LabelFrame(main_frame, text="Settings")
@@ -294,8 +325,8 @@ class ModpollingTool:
         self.entry_register_data_type.grid(column=1, row=5, padx=5, pady=5, sticky="W")
         self.entry_register_data_type.insert(0, "3")
 
-        # Modbus/TCP
-        ttk.Label(self.advanced_tab, text="Modbus/TCP (-m tcp):").grid(
+        # Modbus TCP/IP
+        ttk.Label(self.advanced_tab, text="Modbus TCP/IP (-m tcp):").grid(
             column=0, row=6, sticky="W", padx=5, pady=5
         )
         self.entry_modbus_tcp = ttk.Entry(self.advanced_tab, width=17)
@@ -314,7 +345,8 @@ class ModpollingTool:
         btn_frame.columnconfigure(0, weight=1)
         btn_frame.columnconfigure(1, weight=1)
         btn_frame.columnconfigure(2, weight=1)
-        btn_frame.columnconfigure(3, weight=1)  # For status indicator
+        btn_frame.columnconfigure(3, weight=1)
+        btn_frame.columnconfigure(4, weight=1)  # For status indicator
 
         # Start Polling Button
         self.btn_start = ttk.Button(
@@ -336,9 +368,9 @@ class ModpollingTool:
 
         # ---------------- Status Indicator ----------------
         # Create a Canvas for the circular indicator
-        self.status_canvas_size = 20  # Size of the canvas
+        self.status_canvas_size = 30  # Increased size from 20 to 30
         self.status_canvas = tk.Canvas(btn_frame, width=self.status_canvas_size, height=self.status_canvas_size, highlightthickness=0)
-        self.status_canvas.grid(row=0, column=3, padx=10, pady=5, sticky="w")
+        self.status_canvas.grid(row=0, column=4, padx=(5, 10), pady=5, sticky="n")  # Centered in the column
 
         # Draw a circle on the canvas
         self.circle = self.status_canvas.create_oval(
@@ -466,7 +498,7 @@ class ModpollingTool:
 
         if not com_port and not use_tcp:
             messagebox.showwarning(
-                "Missing COM Port or TCP", "Please select a COM port or specify Modbus/TCP."
+                "Missing COM Port or TCP", "Please select a COM port or specify Modbus TCP/IP."
             )
             return
 
@@ -724,6 +756,11 @@ class ModpollingTool:
             return
 
         selected_equipment = self.listbox_equipment.get(selected_indices[0])
+        
+        # Check if "No results found" is selected
+        if selected_equipment == "No results found":
+            return
+            
         settings = self.equipment_settings.get(selected_equipment, {})
         baudrate = settings.get("baudrate", "9600")
         parity = settings.get("parity", "none")
@@ -756,6 +793,48 @@ class ModpollingTool:
 
         # Switch to Basic tab after selection
         self.settings_notebook.select(self.basic_tab)
+
+    def filter_equipment(self, *args):
+        """Filter equipment list based on search term"""
+        search_term = self.search_var.get().lower().strip()
+        
+        # Clear current listbox
+        self.listbox_equipment.delete(0, tk.END)
+        
+        # Filter and populate equipment list
+        if search_term:
+            filtered_equipment = [eq for eq in self.all_equipment if search_term in eq.lower()]
+        else:
+            filtered_equipment = self.all_equipment
+        
+        # Populate filtered list
+        for equipment in filtered_equipment:
+            self.listbox_equipment.insert(tk.END, equipment)
+        
+        # If only one result, select it automatically
+        if len(filtered_equipment) == 1:
+            self.listbox_equipment.selection_set(0)
+        elif len(filtered_equipment) == 0 and search_term:
+            # Show "No results found" message
+            self.listbox_equipment.insert(tk.END, "No results found")
+            self.listbox_equipment.itemconfig(tk.END, fg='gray')
+
+    def clear_search(self):
+        """Clear search field and show all equipment"""
+        self.search_var.set("")
+        self.filter_equipment()
+
+    def select_first_equipment(self, event=None):
+        """Select the first equipment in the filtered list"""
+        if self.listbox_equipment.size() > 0:
+            self.listbox_equipment.selection_clear(0, tk.END)
+            self.listbox_equipment.selection_set(0)
+            self.select_equipment()
+
+    def focus_search(self, event=None):
+        """Focus on search field"""
+        self.entry_search.focus_set()
+        self.entry_search.select_range(0, tk.END)
 
     def toggle_equipment_pane(self):
         if not self.equipment_pane_visible:
