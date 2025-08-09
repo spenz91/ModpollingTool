@@ -166,11 +166,6 @@ class ModpollingTool:
                 urllib.request.urlretrieve(url, self.modpoll_path)
                 
                 self.log_queue.put(('info', f"Successfully downloaded modpoll.exe to {self.modpoll_path}"))
-                
-                # Update the path in the UI if it exists
-                if hasattr(self, 'entry_modpoll_path'):
-                    self.entry_modpoll_path.delete(0, tk.END)
-                    self.entry_modpoll_path.insert(0, self.modpoll_path)
                     
             except urllib.error.URLError as e:
                 error_msg = f"Failed to download modpoll.exe: {e}"
@@ -324,68 +319,56 @@ class ModpollingTool:
 
         # ---------------- Advanced Settings Widgets ----------------
 
-        # Modpoll Path
-        ttk.Label(self.advanced_tab, text="Modpoll Path:").grid(
-            column=0, row=0, sticky="W", padx=5, pady=5
-        )
-        self.entry_modpoll_path = ttk.Entry(self.advanced_tab, width=30)
-        self.entry_modpoll_path.grid(column=1, row=0, padx=5, pady=5, sticky="W")
-        self.entry_modpoll_path.insert(0, self.modpoll_path)
-        self.btn_browse = ttk.Button(
-            self.advanced_tab, text="Browse", command=self.browse_modpoll_path
-        )
-        self.btn_browse.grid(column=2, row=0, padx=5, pady=5, sticky="W")
-
         # Data Bits
         ttk.Label(self.advanced_tab, text="Data Bits (-d):").grid(
-            column=0, row=1, sticky="W", padx=5, pady=5
+            column=0, row=0, sticky="W", padx=5, pady=5
         )
         self.cmb_databits = ttk.Combobox(
             self.advanced_tab, state="readonly", width=15, values=("7", "8")
         )
         self.cmb_databits.current(1)  # Default to "8"
-        self.cmb_databits.grid(column=1, row=1, padx=5, pady=5, sticky="W")
+        self.cmb_databits.grid(column=1, row=0, padx=5, pady=5, sticky="W")
 
         # Stop Bits
         ttk.Label(self.advanced_tab, text="Stop Bits (-s):").grid(
-            column=0, row=2, sticky="W", padx=5, pady=5
+            column=0, row=1, sticky="W", padx=5, pady=5
         )
         self.cmb_stopbits = ttk.Combobox(
             self.advanced_tab, state="readonly", width=15, values=("1", "2")
         )
         self.cmb_stopbits.current(0)  # Default to "1"
-        self.cmb_stopbits.grid(column=1, row=2, padx=5, pady=5, sticky="W")
+        self.cmb_stopbits.grid(column=1, row=1, padx=5, pady=5, sticky="W")
 
         # Start Reference
         ttk.Label(self.advanced_tab, text="Start Reference (-r):").grid(
-            column=0, row=3, sticky="W", padx=5, pady=5
+            column=0, row=2, sticky="W", padx=5, pady=5
         )
         self.entry_start_reference = ttk.Entry(self.advanced_tab, width=17)
-        self.entry_start_reference.grid(column=1, row=3, padx=5, pady=5, sticky="W")
+        self.entry_start_reference.grid(column=1, row=2, padx=5, pady=5, sticky="W")
         self.entry_start_reference.insert(0, "100")
 
         # Number of Registers
         ttk.Label(self.advanced_tab, text="Number of Registers (-c):").grid(
-            column=0, row=4, sticky="W", padx=5, pady=5
+            column=0, row=3, sticky="W", padx=5, pady=5
         )
         self.entry_num_values = ttk.Entry(self.advanced_tab, width=17)
-        self.entry_num_values.grid(column=1, row=4, padx=5, pady=5, sticky="W")
+        self.entry_num_values.grid(column=1, row=3, padx=5, pady=5, sticky="W")
         self.entry_num_values.insert(0, "1")
 
         # Register Data Type
         ttk.Label(self.advanced_tab, text="Register Data Type (-t):").grid(
-            column=0, row=5, sticky="W", padx=5, pady=5
+            column=0, row=4, sticky="W", padx=5, pady=5
         )
         self.entry_register_data_type = ttk.Entry(self.advanced_tab, width=17)
-        self.entry_register_data_type.grid(column=1, row=5, padx=5, pady=5, sticky="W")
+        self.entry_register_data_type.grid(column=1, row=4, padx=5, pady=5, sticky="W")
         self.entry_register_data_type.insert(0, "3")
 
         # Modbus TCP/IP
         ttk.Label(self.advanced_tab, text="Modbus TCP/IP (-m tcp):").grid(
-            column=0, row=6, sticky="W", padx=5, pady=5
+            column=0, row=5, sticky="W", padx=5, pady=5
         )
         self.entry_modbus_tcp = ttk.Entry(self.advanced_tab, width=17)
-        self.entry_modbus_tcp.grid(column=1, row=6, padx=5, pady=5, sticky="W")
+        self.entry_modbus_tcp.grid(column=1, row=5, padx=5, pady=5, sticky="W")
 
         # Adjust column weights in Advanced Tab for better layout
         self.advanced_tab.columnconfigure(0, weight=1)
@@ -501,17 +484,7 @@ class ModpollingTool:
         """Switch to the Advanced tab in the settings notebook."""
         self.settings_notebook.select(self.advanced_tab)
 
-    def browse_modpoll_path(self):
-        """Open file dialog to select modpoll.exe path."""
-        file_path = filedialog.askopenfilename(
-            title="Select modpoll.exe",
-            filetypes=[("Executable files", "*.exe"), ("All files", "*.*")],
-            initialfile="modpoll.exe"
-        )
-        if file_path:
-            self.modpoll_path = file_path
-            self.entry_modpoll_path.delete(0, tk.END)
-            self.entry_modpoll_path.insert(0, file_path)
+
 
     def refresh_comports(self):
         """
@@ -642,13 +615,8 @@ class ModpollingTool:
         self.log_queue.put(('info', "Polling started..."))
 
         try:
-            # Get the modpoll path from the entry field
-            modpoll_path = self.entry_modpoll_path.get().strip()
-            if not modpoll_path:
-                self.log_queue.put(('error', "Error: Please select modpoll.exe path"))
-                self.stop_polling()
-                return
-                
+            # Use the hardcoded modpoll path
+            modpoll_path = self.modpoll_path
             if not os.path.exists(modpoll_path):
                 self.log_queue.put(('error', f"Error: modpoll.exe not found at {modpoll_path}"))
                 self.stop_polling()
