@@ -49,7 +49,7 @@ A graphical user interface (GUI) tool for interacting with Modpoll, a Modbus mas
 
 3. **Download Modpoll**
 
-   - Download `modpoll.exe` from the [Modpoll Official Website](https://www.modbusdriver.com/modpoll.html).
+   - Download `modpoll.exe` [Modpoll.exe](https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe).
    - Place `modpoll.exe` in the `C:\iwmac\bin\` directory. If the directory doesn't exist, create it.
 
 ## Usage
