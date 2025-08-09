@@ -23,7 +23,7 @@ A graphical user interface (GUI) tool for interacting with Modpoll, a Modbus mas
 
 ## Installation
 
-1. **Clone or [Download the .exe from releases](https://github.com/spenz91/ModpollingTool/releases/tag/modpoll)**
+1. **Clone or [Download the .exe from releases](https://github.com/spenz91/ModpollingTool/releases/tag/modpollv2)**
 
    - Clone the repository using Git:
 
@@ -49,7 +49,7 @@ A graphical user interface (GUI) tool for interacting with Modpoll, a Modbus mas
 
 3. **Download Modpoll**
 
-   - Download `modpoll.exe` [Modpoll.exe](https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe).
+   - Download `modpoll.exe` [Modpoll.exe](https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.ex).
    - Place `modpoll.exe` in the `C:\iwmac\bin\` directory. If the directory doesn't exist, create it.
 
 ## Usage
