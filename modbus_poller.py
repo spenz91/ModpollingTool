@@ -8,6 +8,9 @@ import queue
 import webbrowser  # For opening URLs
 import winreg  # For registry access
 import re  # For regex matching
+import urllib.request  # For downloading files
+import urllib.error  # For handling download errors
+import shlex  # For parsing command line arguments
 
 class ModpollingTool:
     def __init__(self, root):
@@ -19,6 +22,9 @@ class ModpollingTool:
         
         # Default modpoll path
         self.modpoll_path = r"C:\iwmac\bin\modpoll.exe"
+        
+        # Ensure modpoll.exe exists, download if needed
+        self.ensure_modpoll_exists()
 
         # Equipment settings
         self.equipment_settings = {
@@ -128,6 +134,55 @@ class ModpollingTool:
 
         self.create_widgets()
         self.update_log()
+
+    def ensure_modpoll_exists(self):
+        r"""
+        Check if modpoll.exe exists in C:\iwmac\bin, if not download it automatically.
+        """
+        if not os.path.exists(self.modpoll_path):
+            # Create directory if it doesn't exist
+            modpoll_dir = os.path.dirname(self.modpoll_path)
+            if not os.path.exists(modpoll_dir):
+                try:
+                    os.makedirs(modpoll_dir, exist_ok=True)
+                except Exception as e:
+                    self.log_queue.put(('error', f"Failed to create directory {modpoll_dir}: {e}"))
+                    return
+            
+            # Download modpoll.exe
+            self.download_modpoll()
+
+    def download_modpoll(self):
+        """
+        Download modpoll.exe from the specified URL.
+        """
+        url = "https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe"
+        
+        def download_thread():
+            try:
+                self.log_queue.put(('info', "Downloading modpoll.exe..."))
+                
+                # Download the file
+                urllib.request.urlretrieve(url, self.modpoll_path)
+                
+                self.log_queue.put(('info', f"Successfully downloaded modpoll.exe to {self.modpoll_path}"))
+                
+                # Update the path in the UI if it exists
+                if hasattr(self, 'entry_modpoll_path'):
+                    self.entry_modpoll_path.delete(0, tk.END)
+                    self.entry_modpoll_path.insert(0, self.modpoll_path)
+                    
+            except urllib.error.URLError as e:
+                error_msg = f"Failed to download modpoll.exe: {e}"
+                self.log_queue.put(('error', error_msg))
+                messagebox.showerror("Download Error", error_msg)
+            except Exception as e:
+                error_msg = f"Unexpected error downloading modpoll.exe: {e}"
+                self.log_queue.put(('error', error_msg))
+                messagebox.showerror("Download Error", error_msg)
+        
+        # Run download in a separate thread to avoid blocking the UI
+        threading.Thread(target=download_thread, daemon=True).start()
 
     def create_widgets(self):
         # Configure grid layout for root
@@ -347,6 +402,9 @@ class ModpollingTool:
         btn_frame.columnconfigure(2, weight=1)
         btn_frame.columnconfigure(3, weight=1)
         btn_frame.columnconfigure(4, weight=1)  # For status indicator
+        
+        # Store custom command arguments
+        self.custom_arguments = None
 
         # Start Polling Button
         self.btn_start = ttk.Button(
@@ -380,18 +438,35 @@ class ModpollingTool:
         # ---------------- Log Frame (Column 2) ----------------
         self.frame_log = ttk.LabelFrame(main_frame, text="Log")
         self.frame_log.grid(row=0, column=2, sticky="NSEW", padx=5, pady=5)
-        self.frame_log.rowconfigure(0, weight=1)
+        self.frame_log.rowconfigure(1, weight=1)  # Changed from 0 to 1 to make room for command line
         self.frame_log.columnconfigure(0, weight=1)
+        
+        # Command Line Frame (Row 0)
+        cmd_frame = ttk.Frame(self.frame_log)
+        cmd_frame.grid(row=0, column=0, sticky="EW", padx=5, pady=(5, 0))
+        cmd_frame.columnconfigure(0, weight=1)
+        
+        # Command Line Label and Entry
+        ttk.Label(cmd_frame, text="Command:").pack(side=tk.LEFT, padx=(0, 5))
+        self.cmd_var = tk.StringVar()
+        self.entry_cmd = ttk.Entry(cmd_frame, textvariable=self.cmd_var, font=("Consolas", 9))
+        self.entry_cmd.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        # Apply Command Button
+        btn_apply_cmd = ttk.Button(cmd_frame, text="Apply", command=self.apply_custom_command, width=8)
+        btn_apply_cmd.pack(side=tk.RIGHT)
+        
+        # Log Text (Row 1)
         self.txt_log = scrolledtext.ScrolledText(
             self.frame_log,
             width=80,
-            height=25,
+            height=24,  # Reduced height to make room for command line
             state='disabled',
             bg="black",
             fg="white",
             font=("Consolas", 10),
         )
-        self.txt_log.grid(column=0, row=0, sticky="NSEW")
+        self.txt_log.grid(column=0, row=1, sticky="NSEW", padx=5, pady=5)
 
         # Log text tags
         self.txt_log.tag_configure('error', foreground='red')
@@ -492,6 +567,12 @@ class ModpollingTool:
             self.log_queue.put(('info', "Polling is already running."))
             return
 
+        # Check if modpoll.exe exists before starting
+        if not os.path.exists(self.modpoll_path):
+            self.log_queue.put(('error', f"modpoll.exe not found at {self.modpoll_path}. Please wait for download to complete or check the path."))
+            messagebox.showwarning("Modpoll Not Found", f"modpoll.exe not found at {self.modpoll_path}. Please wait for download to complete or check the path.")
+            return
+
         com_port = self.cmb_comport.get().strip()
         modbus_tcp = self.entry_modbus_tcp.get().strip()
         use_tcp = bool(modbus_tcp)
@@ -528,18 +609,25 @@ class ModpollingTool:
             messagebox.showwarning("Invalid Input", "Please enter valid numeric values.")
             return
 
-        # Build command arguments
-        modbus_tcp_cmd = ["-m", "tcp", modbus_tcp] if use_tcp else [self.format_com_port(com_port)]
-        arguments = modbus_tcp_cmd + [
-            f"-b{baudrate}",
-            f"-p{parity}",
-            f"-d{databits}",
-            f"-s{stopbits}",
-            f"-a{adresse}",
-            f"-r{start_reference}",
-            f"-c{num_registers}",
-            f"-t{register_data_type}",
-        ]
+        # Use custom arguments if available, otherwise build default arguments
+        if self.custom_arguments:
+            arguments = self.custom_arguments
+            self.log_queue.put(('info', f"Using custom command arguments: {' '.join(arguments)}"))
+        else:
+            # Build command arguments
+            modbus_tcp_cmd = ["-m", "tcp", modbus_tcp] if use_tcp else [self.format_com_port(com_port)]
+            arguments = modbus_tcp_cmd + [
+                f"-b{baudrate}",
+                f"-p{parity}",
+                f"-d{databits}",
+                f"-s{stopbits}",
+                f"-a{adresse}",
+                f"-r{start_reference}",
+                f"-c{num_registers}",
+                f"-t{register_data_type}",
+            ]
+            # Update command line display
+            self.cmd_var.set(' '.join(arguments))
 
         # Reset attempt counter for a new polling session and store first reference
         self.poll_attempt_counter = 0
@@ -621,9 +709,17 @@ class ModpollingTool:
             if line:
                 lower_line = line.lower()
 
-                # Skip the specific unwanted line
+                # Skip the specific unwanted lines
                 if "polling slave (ctrl-c to stop) ..." in lower_line:
                     continue  # Do not log this line
+                
+                # Skip modpoll header and copyright information
+                if any(header_text in line for header_text in [
+                    "modpoll - FieldTalk(tm) Modbus(R) Polling Utility",
+                    "Copyright (c) 2002-2004 FOCUS Software Engineering Pty Ltd",
+                    "Getopt Library Copyright (C) 1987-1997	Free Software Foundation, Inc."
+                ]):
+                    continue  # Do not log these lines
 
                 # Handle "Reply time-out!"
                 if "reply time-out!" in lower_line:
@@ -761,6 +857,12 @@ class ModpollingTool:
         if selected_equipment == "No results found":
             return
             
+        # Clear custom command when selecting equipment preset
+        if self.custom_arguments:
+            self.custom_arguments = None
+            self.cmd_var.set("")  # Clear the command line
+            self.log_queue.put(('info', f"Custom command cleared - using {selected_equipment} preset"))
+            
         settings = self.equipment_settings.get(selected_equipment, {})
         baudrate = settings.get("baudrate", "9600")
         parity = settings.get("parity", "none")
@@ -835,6 +937,23 @@ class ModpollingTool:
         """Focus on search field"""
         self.entry_search.focus_set()
         self.entry_search.select_range(0, tk.END)
+
+    def apply_custom_command(self):
+        """Apply custom command from the command line entry"""
+        custom_cmd = self.cmd_var.get().strip()
+        if custom_cmd:
+            # Parse the custom command into arguments
+            try:
+                # Split the command into arguments, handling quotes properly
+                import shlex
+                self.custom_arguments = shlex.split(custom_cmd)
+                self.log_queue.put(('info', f"Custom command applied: {custom_cmd}"))
+            except Exception as e:
+                self.log_queue.put(('error', f"Invalid command format: {e}"))
+                self.custom_arguments = None
+        else:
+            self.custom_arguments = None
+            self.log_queue.put(('info', "Custom command cleared, using default settings"))
 
     def toggle_equipment_pane(self):
         if not self.equipment_pane_visible:
