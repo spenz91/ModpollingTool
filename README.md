@@ -113,14 +113,6 @@ The tool includes pre-configured settings for popular industrial devices
 - **Real-Time Logging**: Monitor command execution and responses
 - **Error Handling**: Comprehensive error reporting and validation
 
-## 📋 Requirements
-
-### System Requirements
-- **OS**: Windows 10 or Windows 11 (64-bit)
-- **RAM**: 4 GB minimum (8 GB recommended)
-- **Storage**: 50 MB free space
-- **Network**: Required for Modbus TCP communication
-
 ### Software Dependencies
 - **modpoll.exe**: Embedded in the application bundle
 - **No Python Required**: Standalone executable
