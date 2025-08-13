@@ -48,7 +48,6 @@ Download the latest executable directly from our releases:
 **[Download ModPollingTool.exe](https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/ModPollingTool.exe)**
 
 - **File Size**: ~10.6 MB
-- **Platform**: Windows 10/11 (64-bit)
 - **Dependencies**: None (standalone executable)
 
 ## 🚀 Installation
