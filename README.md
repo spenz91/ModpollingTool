@@ -108,15 +108,4 @@ The tool includes pre-configured settings for popular industrial devices
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- **modpoll utility**: The underlying Modbus communication tool
-- **tkinter**: GUI framework
-- **PyInstaller**: Executable packaging
-
-## 🔄 Version History
-
-- **v2.0**: Professional GUI with equipment presets
-- **v1.0**: Initial command-line version
-
 ---
