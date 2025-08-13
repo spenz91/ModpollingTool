@@ -35,6 +35,11 @@ ModPolling Tool is a comprehensive Windows GUI application designed to simplify 
 - **📝 Custom Commands**: Support for custom modpoll command arguments
 - **🎨 Professional Interface**: Tabbed interface with Basic and Advanced modes
 
+<p align="center">
+    <img width="900" src="https://i.ibb.co/hst67zM/Skjermbilde-2024-11-18-142520.png" alt="Material Bread logo">
+</p>
+
+
 ## 📥 Download
 
 ### Latest Release
