@@ -53,17 +53,17 @@ class ModpollingTool:
             "DIXELL": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
             "DUPLINE": {"baudrate": "115200", "stop_bits": "1", "data_bits": "8", "parity": "none"},
             "EDMK": {"baudrate": "19200", "stop_bits": "1", "data_bits": "8", "parity": "even"},
-            "EM100": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
-            "EM21": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
-            "EM210": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
-            "EM23": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
-            "EM24": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
-            "EM24TCP": {"baudrate": "19200", "stop_bits": "1", "data_bits": "8", "parity": "even"},
-            "EM26": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
-            "EM270": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
-            "EM330": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
-            "EM4": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
-            "EM540": {"baudrate": "19200", "stop_bits": "1", "data_bits": "8", "parity": "even"},
+            "Carlo Gavazzi EM100": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
+            "Carlo Gavazzi EM21": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
+            "Carlo Gavazzi EM210": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
+            "Carlo Gavazzi EM23": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
+            "Carlo Gavazzi EM24": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
+            "Carlo Gavazzi EM24TCP": {"baudrate": "19200", "stop_bits": "1", "data_bits": "8", "parity": "even"},
+            "Carlo Gavazzi EM26": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
+            "Carlo Gavazzi EM270": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
+            "Carlo Gavazzi EM330": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
+            "Carlo Gavazzi EM4": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
+            "Carlo Gavazzi EM540": {"baudrate": "19200", "stop_bits": "1", "data_bits": "8", "parity": "even"},
             "EW": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
             "FLAKTWOODS": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
             "FLEXIT": {"baudrate": "9600", "stop_bits": "2", "data_bits": "8", "parity": "none"},
@@ -95,7 +95,7 @@ class ModpollingTool:
             "REGIN": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
             "REGINRCF": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "even"},
             "SCHNEIDER": {"baudrate": "19200", "stop_bits": "1", "data_bits": "8", "parity": "even"},
-            "SLV": {"baudrate": "19200", "stop_bits": "1", "data_bits": "8", "parity": "even"},
+            "SLV AHT": {"baudrate": "19200", "stop_bits": "1", "data_bits": "8", "parity": "even"},
             "SOLARLOG": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
             "SWEGON": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
             "TROX": {"baudrate": "9600", "stop_bits": "1", "data_bits": "8", "parity": "none"},
@@ -236,8 +236,8 @@ class ModpollingTool:
         for equipment in self.all_equipment:
             self.listbox_equipment.insert(tk.END, equipment)
 
-        # Bind single-click event
-        self.listbox_equipment.bind('<Button-1>', self.select_equipment)
+        # Bind selection change event to update command immediately
+        self.listbox_equipment.bind('<<ListboxSelect>>', self.on_equipment_selection_change)
         
         # Bind Enter key to select equipment
         self.listbox_equipment.bind('<Return>', self.select_equipment)
@@ -817,12 +817,10 @@ class ModpollingTool:
         else:
             self.root.destroy()
 
-    def select_equipment(self, event=None):
+    def on_equipment_selection_change(self, event=None):
+        """Handle equipment selection change - update command immediately"""
         selected_indices = self.listbox_equipment.curselection()
         if not selected_indices:
-            messagebox.showwarning(
-                "Selection Error", "Please select an equipment before pressing 'Select'."
-            )
             return
 
         selected_equipment = self.listbox_equipment.get(selected_indices[0])
@@ -866,11 +864,15 @@ class ModpollingTool:
         else:
             self.cmb_databits.set("8")  # Default to "8" if invalid
 
-        # Build and display the full command
+        # Build and display the full command immediately
         self.build_and_display_command()
 
         # Switch to Basic tab after selection
         self.settings_notebook.select(self.basic_tab)
+
+    def select_equipment(self, event=None):
+        """Legacy method for button clicks and Enter key - now just calls the new method"""
+        self.on_equipment_selection_change(event)
 
     def filter_equipment(self, *args):
         """Filter equipment list based on search term"""
