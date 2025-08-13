@@ -6,20 +6,6 @@ A professional GUI application for Modbus communication testing and device confi
 ![Platform](https://img.shields.io/badge/Platform-Windows-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Download](#download)
-- [Installation](#installation)
-- [How It Works](#how-it-works)
-- [Equipment Presets](#equipment-presets)
-- [Usage Guide](#usage-guide)
-- [Requirements](#requirements)
-- [Building from Source](#building-from-source)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## 🎯 Overview
 
 ModPolling Tool is a comprehensive Windows GUI application designed to simplify Modbus communication testing and device configuration. It provides an intuitive interface for the modpoll utility, making it easy to communicate with Modbus RTU and TCP devices without memorizing complex command-line parameters.
