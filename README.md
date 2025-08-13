@@ -143,5 +143,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **v1.0**: Initial command-line version
 
 ---
-
-**Made with ❤️ for the industrial automation community**
