@@ -27,7 +27,7 @@ ModPolling Tool is a comprehensive Windows GUI application designed to simplify 
 ## ✨ Features
 
 - **🖥️ User-Friendly GUI**: Clean, modern interface built with tkinter
-- **🔧 Equipment Presets**: Pre-configured settings for popular Carlo Gavazzi and SLV devices
+- **🔧 Equipment Presets**: Pre-configured settings for popular devices
 - **⚡ Single-Click Selection**: Instant equipment selection with immediate command generation
 - **🌐 Dual Protocol Support**: Modbus RTU (serial) and Modbus TCP support
 - **📊 Real-Time Logging**: Live command execution and response monitoring
