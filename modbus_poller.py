@@ -236,8 +236,8 @@ class ModpollingTool:
         for equipment in self.all_equipment:
             self.listbox_equipment.insert(tk.END, equipment)
 
-        # Bind double-click event
-        self.listbox_equipment.bind('<Double-1>', self.select_equipment)
+        # Bind single-click event
+        self.listbox_equipment.bind('<Button-1>', self.select_equipment)
         
         # Bind Enter key to select equipment
         self.listbox_equipment.bind('<Return>', self.select_equipment)
@@ -587,20 +587,25 @@ class ModpollingTool:
             arguments = self.custom_arguments
             self.log_queue.put(('info', f"Using custom command arguments: {' '.join(arguments)}"))
         else:
-            # Build command arguments
-            modbus_tcp_cmd = ["-m", "tcp", modbus_tcp] if use_tcp else [self.format_com_port(com_port)]
-            arguments = modbus_tcp_cmd + [
-                f"-b{baudrate}",
-                f"-p{parity}",
-                f"-d{databits}",
-                f"-s{stopbits}",
-                f"-a{adresse}",
-                f"-r{start_reference}",
-                f"-c{num_registers}",
-                f"-t{register_data_type}",
-            ]
-            # Update command line display
-            self.cmd_var.set(' '.join(arguments))
+            # Build command arguments using the same method as equipment selection
+            self.build_and_display_command()
+            # Get the command from the display
+            cmd_text = self.cmd_var.get().strip()
+            if cmd_text:
+                arguments = cmd_text.split()
+            else:
+                # Fallback to building arguments directly
+                modbus_tcp_cmd = ["-m", "tcp", modbus_tcp] if use_tcp else [self.format_com_port(com_port)]
+                arguments = modbus_tcp_cmd + [
+                    f"-b{baudrate}",
+                    f"-p{parity}",
+                    f"-d{databits}",
+                    f"-s{stopbits}",
+                    f"-a{adresse}",
+                    f"-r{start_reference}",
+                    f"-c{num_registers}",
+                    f"-t{register_data_type}",
+                ]
 
         # Reset attempt counter for a new polling session and store first reference
         self.poll_attempt_counter = 0
@@ -624,8 +629,9 @@ class ModpollingTool:
 
             cmd = [modpoll_path] + arguments
 
-            # Log the command
-            self.log_queue.put(('info', f"Running command: {' '.join(cmd)}"))
+            # Log the command (mask the full path to show just 'modpoll')
+            masked_cmd = ['modpoll'] + arguments
+            self.log_queue.put(('info', f"Running command: {' '.join(masked_cmd)}"))
             self.log_queue.put(('info', f"Parameters: COM={com_port}, Baud={baudrate}, Parity={parity}, DataBits={databits}, StopBits={stopbits}, Addr={adresse}, Ref={start_reference}, Count={num_registers}, Type={register_data_type}"))
 
             # Prevent a new window from opening
@@ -828,7 +834,6 @@ class ModpollingTool:
         # Clear custom command when selecting equipment preset
         if self.custom_arguments:
             self.custom_arguments = None
-            self.cmd_var.set("")  # Clear the command line
             self.log_queue.put(('info', f"Custom command cleared - using {selected_equipment} preset"))
             
         settings = self.equipment_settings.get(selected_equipment, {})
@@ -860,6 +865,9 @@ class ModpollingTool:
             self.cmb_databits.set(data_bits)
         else:
             self.cmb_databits.set("8")  # Default to "8" if invalid
+
+        # Build and display the full command
+        self.build_and_display_command()
 
         # Switch to Basic tab after selection
         self.settings_notebook.select(self.basic_tab)
@@ -905,6 +913,78 @@ class ModpollingTool:
         """Focus on search field"""
         self.entry_search.focus_set()
         self.entry_search.select_range(0, tk.END)
+
+    def build_and_display_command(self):
+        """Build and display the full command based on current settings"""
+        # Get current settings
+        com_port = self.cmb_comport.get().strip()
+        modbus_tcp = self.entry_modbus_tcp.get().strip()
+        use_tcp = bool(modbus_tcp)
+        
+        baudrate = self.cmb_baudrate.get().strip()
+        parity = self.cmb_parity.get()
+        databits = self.cmb_databits.get()
+        stopbits = self.cmb_stopbits.get()
+        adresse = self.entry_slave_address.get().strip()
+        start_reference = self.entry_start_reference.get().strip()
+        num_registers = self.entry_num_values.get().strip()
+        register_data_type = self.entry_register_data_type.get().strip()
+        
+        # Build command arguments
+        if use_tcp:
+            modbus_tcp_cmd = ["-m", "tcp", modbus_tcp]
+            arguments = modbus_tcp_cmd + [
+                f"-b{baudrate}",
+                f"-p{parity}",
+                f"-d{databits}",
+                f"-s{stopbits}",
+                f"-a{adresse}",
+                f"-r{start_reference}",
+                f"-c{num_registers}",
+                f"-t{register_data_type}",
+            ]
+        else:
+            # Use COM port if available
+            if com_port:
+                # Ensure COM port is properly formatted (e.g., "COM1" not just "1")
+                if not com_port.upper().startswith('COM'):
+                    formatted_com_port = f"COM{com_port}"
+                else:
+                    formatted_com_port = com_port.upper()
+                
+                # Apply the same formatting logic as format_com_port method
+                try:
+                    port_number = int(formatted_com_port.replace("COM", "").replace("com", "").strip())
+                    if port_number >= 10:
+                        formatted_com_port = f"\\\\.\\{formatted_com_port}"
+                except ValueError:
+                    pass
+                
+                arguments = [formatted_com_port] + [
+                    f"-b{baudrate}",
+                    f"-p{parity}",
+                    f"-d{databits}",
+                    f"-s{stopbits}",
+                    f"-a{adresse}",
+                    f"-r{start_reference}",
+                    f"-c{num_registers}",
+                    f"-t{register_data_type}",
+                ]
+            else:
+                # Show placeholder if no COM port selected
+                arguments = ["[COM_PORT]"] + [
+                    f"-b{baudrate}",
+                    f"-p{parity}",
+                    f"-d{databits}",
+                    f"-s{stopbits}",
+                    f"-a{adresse}",
+                    f"-r{start_reference}",
+                    f"-c{num_registers}",
+                    f"-t{register_data_type}",
+                ]
+        
+        # Update command line display
+        self.cmd_var.set(' '.join(arguments))
 
     def apply_custom_command(self):
         """Apply custom command from the command line entry"""
