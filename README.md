@@ -122,56 +122,6 @@ The tool includes pre-configured settings for popular industrial devices
 - **No Python Required**: Standalone executable
 - **No Additional Libraries**: Self-contained application
 
-## 🔨 Building from Source
-
-If you want to build the application from source:
-
-### Prerequisites
-- Python 3.8 or higher
-- pip package manager
-
-### Build Steps
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/spenz91/ModpollingTool.git
-   cd ModpollingTool
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Build executable**:
-   ```bash
-   python build_exe.py
-   ```
-
-4. **Find the executable** in the `dist/` folder
-
-### Build Files
-- `modpoll.py`: Main application source code
-- `requirements.txt`: Python dependencies
-- `build_exe.py`: PyInstaller build script
-- `build.bat`: Windows batch build script
-
-## 🤝 Contributing
-
-We welcome contributions! Here's how you can help:
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/AmazingFeature`)
-3. **Commit** your changes (`git commit -m 'Add some AmazingFeature'`)
-4. **Push** to the branch (`git push origin feature/AmazingFeature`)
-5. **Open** a Pull Request
-
-### Development Guidelines
-- Follow PEP 8 style guidelines
-- Add comments for complex logic
-- Test thoroughly before submitting
-- Update documentation as needed
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -179,8 +129,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - **modpoll utility**: The underlying Modbus communication tool
-- **Carlo Gavazzi**: Equipment specifications and testing
-- **SLV**: Device configuration support
 - **tkinter**: GUI framework
 - **PyInstaller**: Executable packaging
 
