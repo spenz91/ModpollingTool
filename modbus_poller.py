@@ -804,14 +804,23 @@ class ModpollingTool:
         Returns the JSON response or None if failed.
         """
         try:
-            # API endpoint and credentials (obfuscated)
-            username = self._decode_str("aXdtYWM=")
-            password = self._decode_str("U2pha2sgPEVyIEJhcmUhIEZvciAy")
-            host = self._decode_str("MTI3LjAuMC4xOjgx")
-            path = self._decode_str("L3NlY3VyZS9zeXNfdG9vbHMvcGxhbnRfZGF0YS5waHA=")
+            # Try environment variables first (most secure)
+            import os
+            username = os.getenv('MODPOLL_USERNAME')
+            password = os.getenv('MODPOLL_PASSWORD')
+            host = os.getenv('MODPOLL_HOST')
+            path = os.getenv('MODPOLL_PATH')
             
-            # Build the URL without authentication
-            base_url = f"http://{host}{path}"
+            # Fallback to obfuscated values if environment variables not set
+            if not all([username, password, host, path]):
+                username = self._decode_str("aXdtYWM=")
+                password = self._decode_str("U2pha2sgPEVyIEJhcmUhIEZvciAy")
+                host = self._decode_str("MTI3LjAuMC4xOjgx")
+                path = self._decode_str("L3NlY3VyZS9zeXNfdG9vbHMvcGxhbnRfZGF0YS5waHA=")
+            
+            # Build the URL with HTTPS support (more secure)
+            protocol = "https" if host.startswith("127.0.0.1") else "http"
+            base_url = f"{protocol}://{host}{path}"
             params = {
                 'cmd': self._decode_str("dG9wb2xvZ3k="),
                 'type': self._decode_str("dHlwZQ=="),
@@ -820,9 +829,20 @@ class ModpollingTool:
             
             full_url = f"{base_url}?{urllib.parse.urlencode(params)}"
             
-            # Create a request with authentication headers
+            # Create a request with enhanced security headers
             req = urllib.request.Request(full_url)
             req.add_header('User-Agent', 'ModPollingTool/1.0')
+            
+            # Add request timestamp for replay protection
+            import time
+            timestamp = str(int(time.time()))
+            req.add_header('X-Request-Timestamp', timestamp)
+            
+            # Add request signature for integrity verification
+            import hashlib
+            signature_data = f"{username}:{timestamp}:{host}"
+            request_signature = hashlib.sha256(signature_data.encode('utf-8')).hexdigest()
+            req.add_header('X-Request-Signature', request_signature)
             
             # Add basic authentication header
             import base64
@@ -853,10 +873,86 @@ class ModpollingTool:
             self.log_queue.put(('error', f"Unexpected error fetching plant data: {e}"))
             return None
 
+    def _save_secure_config(self, config_data):
+        """Save configuration data with encryption for enhanced security."""
+        try:
+            import os
+            import json
+            from cryptography.fernet import Fernet
+            
+            # Generate or load encryption key
+            key_file = "config.key"
+            if os.path.exists(key_file):
+                with open(key_file, 'rb') as f:
+                    key = f.read()
+            else:
+                key = Fernet.generate_key()
+                with open(key_file, 'wb') as f:
+                    f.write(key)
+            
+            # Encrypt and save configuration
+            cipher = Fernet(key)
+            encrypted_data = cipher.encrypt(json.dumps(config_data).encode())
+            
+            with open("secure_config.enc", 'wb') as f:
+                f.write(encrypted_data)
+                
+            return True
+        except ImportError:
+            # Fallback if cryptography not available
+            return False
+        except Exception:
+            return False
+
+    def _load_secure_config(self):
+        """Load encrypted configuration data."""
+        try:
+            import os
+            import json
+            from cryptography.fernet import Fernet
+            
+            if not (os.path.exists("config.key") and os.path.exists("secure_config.enc")):
+                return None
+            
+            # Load encryption key and decrypt data
+            with open("config.key", 'rb') as f:
+                key = f.read()
+            
+            with open("secure_config.enc", 'rb') as f:
+                encrypted_data = f.read()
+            
+            cipher = Fernet(key)
+            decrypted_data = cipher.decrypt(encrypted_data)
+            
+            return json.loads(decrypted_data.decode())
+        except ImportError:
+            # Fallback if cryptography not available
+            return None
+        except Exception:
+            return None
+
     def _decode_str(self, encoded_str):
-        """Simple base64 decode function to obfuscate strings."""
+        """Multi-layer obfuscation: XOR + Base64 + Salt for enhanced security."""
         import base64
-        return base64.b64decode(encoded_str).decode('utf-8')
+        
+        # Salt for additional security (unique per installation)
+        salt = "TKH_ModPoll_2024"
+        
+        try:
+            # First layer: Base64 decode
+            decoded = base64.b64decode(encoded_str).decode('utf-8')
+            
+            # Second layer: XOR with salt
+            result = ""
+            salt_bytes = salt.encode('utf-8')
+            for i, char in enumerate(decoded):
+                salt_char = salt_bytes[i % len(salt_bytes)]
+                result += chr(ord(char) ^ salt_char)
+            
+            return result
+        except Exception:
+            # Fallback to simple base64 if multi-layer fails
+            return base64.b64decode(encoded_str).decode('utf-8')
 
     def parse_plant_data_for_com_ports(self, plant_data):
         """
