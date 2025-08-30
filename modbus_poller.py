@@ -10,6 +10,8 @@ import winreg  # For registry access
 import re  # For regex matching
 import urllib.request  # For downloading files
 import urllib.error  # For handling download errors
+import urllib.parse  # For URL encoding
+import json  # For JSON parsing
 import shlex  # For parsing command line arguments
 from tkinter import font as tkfont
 
@@ -383,6 +385,10 @@ class ModpollingTool:
         # Advanced Tab
         self.advanced_tab = ttk.Frame(self.settings_notebook)
         self.settings_notebook.add(self.advanced_tab, text="Advanced")
+        
+        # Units Tab
+        self.units_tab = ttk.Frame(self.settings_notebook)
+        self.settings_notebook.add(self.units_tab, text="Units")
 
         # ---------------- Basic Settings Widgets ----------------
 
@@ -484,6 +490,61 @@ class ModpollingTool:
         # Adjust column weights in Advanced Tab for better layout
         self.advanced_tab.columnconfigure(0, weight=1)
         self.advanced_tab.columnconfigure(1, weight=3)
+
+        # ---------------- Units Tab Widgets ----------------
+        # Configure grid for Units Tab
+        self.units_tab.columnconfigure(0, weight=1)
+        self.units_tab.columnconfigure(1, weight=1)  # Add weight to center the table
+        self.units_tab.columnconfigure(2, weight=1)  # Add weight to center the table
+        self.units_tab.rowconfigure(1, weight=1)  # Make the treeview expandable
+        
+        # Units Header
+        units_header_frame = ttk.Frame(self.units_tab)
+        units_header_frame.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        units_header_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(units_header_frame, text="Plant Units:", font=("Segoe UI", 10, "bold")).grid(
+            row=0, column=0, sticky="w", padx=5, pady=5
+        )
+        
+        # Refresh Units Button
+        self.btn_refresh_units = ttk.Button(
+            units_header_frame, text="🔄 Refresh Units", command=self.refresh_units
+        )
+        self.btn_refresh_units.grid(row=0, column=1, sticky="e", padx=5, pady=5)
+        
+        # Units Treeview
+        self.units_tree = ttk.Treeview(self.units_tab, columns=("unit_id", "unit_name", "status", "owner", "tree", "ip"), show="headings", height=15)
+        self.units_tree.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
+        
+        # Configure columns with sorting
+        self.units_tree.heading("unit_id", text="Unit ID", command=lambda: self.sort_units_tree("unit_id", False))
+        self.units_tree.heading("unit_name", text="Unit Name", command=lambda: self.sort_units_tree("unit_name", False))
+        self.units_tree.heading("status", text="Status", command=lambda: self.sort_units_tree("status", False))
+        self.units_tree.heading("owner", text="Owner", command=lambda: self.sort_units_tree("owner", False))
+        self.units_tree.heading("tree", text="COM Port", command=lambda: self.sort_units_tree("tree", False))
+        self.units_tree.heading("ip", text="IP Address", command=lambda: self.sort_units_tree("ip", False))
+        
+        # Set column widths and center alignment
+        self.units_tree.column("unit_id", width=80, minwidth=80, anchor="center")
+        self.units_tree.column("unit_name", width=150, minwidth=150, anchor="center")
+        self.units_tree.column("status", width=100, minwidth=100, anchor="center")
+        self.units_tree.column("owner", width=100, minwidth=100, anchor="center")
+        self.units_tree.column("tree", width=80, minwidth=80, anchor="center")
+        self.units_tree.column("ip", width=120, minwidth=120, anchor="center")
+        
+        # Add scrollbar
+        units_scrollbar = ttk.Scrollbar(self.units_tab, orient="vertical", command=self.units_tree.yview)
+        units_scrollbar.grid(row=1, column=2, sticky="ns")
+        self.units_tree.configure(yscrollcommand=units_scrollbar.set)
+        
+        # Status label for units
+        self.units_status_label = ttk.Label(self.units_tab, text="Click 'Refresh Units' to load unit data", foreground="gray")
+        self.units_status_label.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        
+        # Initialize sorting state
+        self.units_sort_column = None
+        self.units_sort_reverse = False
 
         # ---------------- Polling Buttons and Status Indicator ----------------
         # Polling Buttons and Status Indicator are placed in the same frame using grid
@@ -594,6 +655,9 @@ class ModpollingTool:
             bg="black",
             fg="white",
             font=("Consolas", 10),
+            wrap=tk.NONE,  # Disable word wrap for better performance
+            undo=False,    # Disable undo for better performance
+            maxundo=0,     # Disable undo history
         )
         self.txt_log.grid(column=0, row=1, sticky="NSEW", padx=5, pady=5)
 
@@ -622,6 +686,14 @@ class ModpollingTool:
             ),
         )
 
+        # Refresh plant data button
+        btn_refresh_plant = ttk.Button(
+            footer_frame, text="Refresh Plant Data", command=self.refresh_plant_data
+        )
+        btn_refresh_plant.pack(side='left', padx=5, pady=5)
+
+
+
         # Copyright label
         footer_label_right = ttk.Label(footer_frame, text="©TKH")
         footer_label_right.pack(side='right', padx=5, pady=5)
@@ -640,6 +712,7 @@ class ModpollingTool:
         Refresh the list of available COM ports by combining:
         1. COM ports detected by pySerial.
         2. COM ports detected via registry scan.
+        3. Enhanced names from plant data (if available).
         """
         ports = serial.tools.list_ports.comports()
         com_ports_serial = [port.device for port in ports]
@@ -648,12 +721,21 @@ class ModpollingTool:
 
         # Combine both lists and remove duplicates
         combined_com_ports = sorted(list(set(com_ports_serial + com_ports_registry)))
+        
+        # Get enhanced COM port names from plant data
+        enhanced_com_ports = self.get_enhanced_com_port_names(combined_com_ports)
 
-        # Update the combobox values
-        self.cmb_comport['values'] = combined_com_ports
+        # Update the combobox values with enhanced names
+        self.cmb_comport['values'] = enhanced_com_ports
+
+        # Log the available COM ports
+        if enhanced_com_ports:
+            pass  # Removed detailed logging
+        else:
+            pass  # Removed verbose logging
 
         # If there are available COM ports, select the first one
-        if combined_com_ports:
+        if enhanced_com_ports:
             self.cmb_comport.current(0)
         else:
             self.cmb_comport.set('')
@@ -671,8 +753,322 @@ class ModpollingTool:
                 val = winreg.EnumValue(key, i)
                 com_ports.append(val[1])
         except Exception as e:
-            self.log_queue.put(('error', f"Error accessing registry for COM ports: {e}"))
+            self.log_queue.put(('error', "Error! Cannot find COM ports. Type in the COM port manually."))
         return com_ports
+
+    def get_enhanced_com_port_names(self, com_ports):
+        """
+        Get enhanced COM port names from plant data.
+        Returns list of COM ports with enhanced names like "COM1 - SLV".
+        """
+        enhanced_ports = []
+        
+        # Try to fetch plant data for COM port information
+        try:
+            plant_data = self.fetch_plant_data()
+            if plant_data:
+                # Create a mapping of COM ports to their enhanced names
+                com_port_mapping = self.parse_plant_data_for_com_ports(plant_data)
+                
+                # Log the mapping for debugging
+                if com_port_mapping:
+                    pass  # Removed detailed logging
+                
+                for com_port in com_ports:
+                    if com_port in com_port_mapping:
+                        enhanced_ports.append(com_port_mapping[com_port])
+                    else:
+                        enhanced_ports.append(com_port)
+            else:
+                # If plant data is not available, use original COM port names
+                enhanced_ports = com_ports
+                pass  # Removed verbose logging
+        except Exception as e:
+            self.log_queue.put(('info', f"Could not fetch plant data for COM port names: {e}"))
+            enhanced_ports = com_ports
+            
+        return enhanced_ports
+
+    def refresh_plant_data(self):
+        """
+        Manually refresh plant data and update COM port names.
+        """
+        self.log_queue.put(('info', "Refreshing plant data..."))
+        self.refresh_comports()
+
+
+
+    def fetch_plant_data(self):
+        """
+        Fetch plant data from the topology API with authentication.
+        Returns the JSON response or None if failed.
+        """
+        try:
+            # API endpoint and credentials (obfuscated)
+            username = self._decode_str("aXdtYWM=")
+            password = self._decode_str("U2pha2sgPEVyIEJhcmUhIEZvciAy")
+            host = self._decode_str("MTI3LjAuMC4xOjgx")
+            path = self._decode_str("L3NlY3VyZS9zeXNfdG9vbHMvcGxhbnRfZGF0YS5waHA=")
+            
+            # Build the URL without authentication
+            base_url = f"http://{host}{path}"
+            params = {
+                'cmd': self._decode_str("dG9wb2xvZ3k="),
+                'type': self._decode_str("dHlwZQ=="),
+                'request': self._decode_str("eyJsaW1pdCI6MTAwLCJvZmZzZXQiOjAsInNvcnQiOlt7ImZpZWxkIjoibWFuX3N0YXJ0IiwiZGlyZWN0aW9uIjoiYXNjIn1dfQ==")
+            }
+            
+            full_url = f"{base_url}?{urllib.parse.urlencode(params)}"
+            
+            # Create a request with authentication headers
+            req = urllib.request.Request(full_url)
+            req.add_header('User-Agent', 'ModPollingTool/1.0')
+            
+            # Add basic authentication header
+            import base64
+            credentials = base64.b64encode(f"{username}:{password}".encode('utf-8')).decode('utf-8')
+            req.add_header('Authorization', f'Basic {credentials}')
+            
+            # Make the request with a 5-second timeout
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = response.read()
+                plant_data = json.loads(data.decode('utf-8'))
+                self.log_queue.put(('info', "Successfully fetched plant data!"))
+                return plant_data
+                
+        except urllib.error.URLError as e:
+            error_msg = str(e)
+            if "10061" in error_msg or "refused" in error_msg.lower():
+                pass  # Removed verbose logging
+            else:
+                pass  # Removed verbose logging
+            return None
+        except urllib.error.HTTPError as e:
+            self.log_queue.put(('info', f"HTTP error {e.code} from plant data API: {e.reason}"))
+            return None
+        except json.JSONDecodeError as e:
+            self.log_queue.put(('error', f"Invalid JSON response from plant data API: {e}"))
+            return None
+        except Exception as e:
+            self.log_queue.put(('error', f"Unexpected error fetching plant data: {e}"))
+            return None
+
+    def _decode_str(self, encoded_str):
+        """Simple base64 decode function to obfuscate strings."""
+        import base64
+        return base64.b64decode(encoded_str).decode('utf-8')
+
+    def parse_plant_data_for_com_ports(self, plant_data):
+        """
+        Parse plant data to extract COM port mappings.
+        Expected format from API: {"tree": "COM1 - 192.168.10.31", "w2ui": {"children": [{"owner": "SLV"}]}}
+        Returns: {"COM1": "COM1 - SLV"}
+        """
+        com_port_mapping = {}
+        ip_address = ""
+        
+        try:
+            # Parse the JSON structure from the API
+            if isinstance(plant_data, list):
+                for item in plant_data:
+                    if isinstance(item, dict) and 'w2ui' in item:
+                        w2ui_data = item.get('w2ui', {})
+                        if 'children' in w2ui_data:
+                            for child in w2ui_data['children']:
+                                if isinstance(child, dict):
+                                    tree_info = child.get('tree', '')
+                                    
+                                    # Extract IP address from tree info (e.g., "COM1 - 192.168.10.31")
+                                    ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', tree_info)
+                                    if ip_match and not ip_address:
+                                        ip_address = ip_match.group(1)
+                                    
+                                    # Look for COM port in tree info (e.g., "COM1 - 192.168.10.31")
+                                    com_match = re.search(r'COM(\d+)', tree_info)
+                                    if com_match:
+                                        com_port = f"COM{com_match.group(1)}"
+                                        
+                                        # Look for owner in the children of this COM port
+                                        if 'w2ui' in child and 'children' in child['w2ui']:
+                                            for unit in child['w2ui']['children']:
+                                                if isinstance(unit, dict) and 'owner' in unit:
+                                                    owner = unit.get('owner', '')
+                                                    
+                                                    if owner:
+                                                        enhanced_name = f"{com_port} - {owner}"
+                                                        com_port_mapping[com_port] = enhanced_name
+                                                        break  # Use the first owner found
+                                
+        except Exception as e:
+            self.log_queue.put(('error', f"Error parsing plant data: {e}"))
+        
+        # Display summary if mappings were found
+        if com_port_mapping:
+            self.log_queue.put(('info', f"Found {len(com_port_mapping)} COM port mappings!"))
+            if ip_address:
+                self.log_queue.put(('info', f"IP adresse: '{ip_address}'"))
+            for com_port, enhanced_name in sorted(com_port_mapping.items()):
+                owner = enhanced_name.split(' - ')[1] if ' - ' in enhanced_name else enhanced_name
+                self.log_queue.put(('info', f"☑ {com_port} -> {owner}"))
+            
+        return com_port_mapping
+
+    def parse_units_data(self, plant_data):
+        """
+        Parse plant data to extract unit information.
+        Returns a list of dictionaries with unit details.
+        """
+        units = []
+        
+        try:
+            if isinstance(plant_data, list):
+                for item in plant_data:
+                    if isinstance(item, dict) and 'w2ui' in item:
+                        w2ui_data = item.get('w2ui', {})
+                        if 'children' in w2ui_data:
+                            for child in w2ui_data['children']:
+                                if isinstance(child, dict):
+                                    tree_info = child.get('tree', '')
+                                    
+                                    # Extract COM port and IP from tree info (e.g., "COM1 - 192.168.10.31")
+                                    com_match = re.search(r'COM(\d+)', tree_info)
+                                    ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', tree_info)
+                                    
+                                    com_port = f"COM{com_match.group(1)}" if com_match else ""
+                                    ip_address = ip_match.group(1) if ip_match else ""
+                                    
+                                    # Look for units in the children of this COM port
+                                    if 'w2ui' in child and 'children' in child['w2ui']:
+                                        for unit in child['w2ui']['children']:
+                                            if isinstance(unit, dict):
+                                                unit_info = {
+                                                    'unit_id': unit.get('unit_id', ''),
+                                                    'status': unit.get('status', ''),
+                                                    'owner': unit.get('owner', ''),
+                                                    'unit_name': unit.get('unit_name', ''),
+                                                    'tree': com_port,
+                                                    'ip': ip_address
+                                                }
+                                                units.append(unit_info)
+                                
+        except Exception as e:
+            self.log_queue.put(('error', f"Error parsing units data: {e}"))
+            
+        return units
+
+    def refresh_units(self):
+        """
+        Fetch and display units data from the API.
+        """
+        def refresh_thread():
+            try:
+                self.units_status_label.config(text="Fetching units data...", foreground="blue")
+                self.btn_refresh_units.config(state="disabled")
+                
+                # Clear existing items
+                for item in self.units_tree.get_children():
+                    self.units_tree.delete(item)
+                
+                # Fetch plant data
+                plant_data = self.fetch_plant_data()
+                
+                if plant_data:
+                    # Parse units data
+                    units = self.parse_units_data(plant_data)
+                    
+                    if units:
+                        # Add units to treeview
+                        for unit in units:
+                            self.units_tree.insert('', 'end', values=(
+                                unit['unit_id'],
+                                unit['unit_name'],
+                                unit['status'],
+                                unit['owner'],
+                                unit['tree'],
+                                unit['ip']
+                            ))
+                        
+                        self.units_status_label.config(
+                            text=f"Loaded {len(units)} units successfully", 
+                            foreground="green"
+                        )
+                        self.log_queue.put(('info', f"Successfully loaded {len(units)} units"))
+                    else:
+                        self.units_status_label.config(
+                            text="No units found in plant data", 
+                            foreground="orange"
+                        )
+                        self.log_queue.put(('info', "No units found in plant data"))
+                else:
+                    self.units_status_label.config(
+                        text="Failed to fetch plant data", 
+                        foreground="red"
+                    )
+                    self.log_queue.put(('error', "Failed to fetch plant data"))
+                    
+            except Exception as e:
+                self.units_status_label.config(
+                    text=f"Error: {str(e)}", 
+                    foreground="red"
+                )
+                self.log_queue.put(('error', f"Error refreshing units: {e}"))
+            finally:
+                self.btn_refresh_units.config(state="normal")
+        
+        # Run in separate thread to avoid blocking UI
+        threading.Thread(target=refresh_thread, daemon=True).start()
+
+    def sort_units_tree(self, col, reverse):
+        """
+        Sort tree contents when a column header is clicked.
+        """
+        try:
+            # Get all items from the tree
+            items = [(self.units_tree.set(item, col), item) for item in self.units_tree.get_children('')]
+            
+            # Sort the items
+            items.sort(reverse=reverse)
+            
+            # Rearrange items in sorted positions
+            for index, (val, item) in enumerate(items):
+                self.units_tree.move(item, '', index)
+            
+            # Update sorting state
+            self.units_sort_column = col
+            self.units_sort_reverse = reverse
+            
+            # Update column headers to show sort direction
+            for column in ("unit_id", "unit_name", "status", "owner", "tree", "ip"):
+                if column == col:
+                    # Add arrow to show sort direction
+                    arrow = " ▼" if reverse else " ▲"
+                    current_text = self.units_tree.heading(column)['text'].replace(" ▲", "").replace(" ▼", "")
+                    self.units_tree.heading(column, text=current_text + arrow)
+                else:
+                    # Remove arrows from other columns
+                    current_text = self.units_tree.heading(column)['text'].replace(" ▲", "").replace(" ▼", "")
+                    self.units_tree.heading(column, text=current_text)
+            
+            # Toggle reverse for next click
+            self.units_tree.heading(col, command=lambda: self.sort_units_tree(col, not reverse))
+            
+        except Exception as e:
+            self.log_queue.put(('error', f"Error sorting units table: {e}"))
+
+    def extract_com_port_from_enhanced_name(self, enhanced_name):
+        """
+        Extract the actual COM port from an enhanced name like "COM1 - SLV".
+        Returns the original COM port name.
+        """
+        try:
+            # Extract COM port from enhanced name (e.g., "COM1 - SLV" -> "COM1")
+            com_match = re.search(r'COM\d+', enhanced_name)
+            if com_match:
+                return com_match.group(0)
+            else:
+                return enhanced_name
+        except Exception:
+            return enhanced_name
 
     def format_com_port(self, com_port):
         try:
@@ -695,7 +1091,9 @@ class ModpollingTool:
             messagebox.showwarning("Modpoll Not Found", f"modpoll.exe not found at {self.modpoll_path}. Please wait for download to complete or check the path.")
             return
 
-        com_port = self.cmb_comport.get().strip()
+        com_port_enhanced = self.cmb_comport.get().strip()
+        # Extract actual COM port from enhanced name (e.g., "COM1 - SLV" -> "COM1")
+        com_port = self.extract_com_port_from_enhanced_name(com_port_enhanced)
         modbus_tcp = self.entry_modbus_tcp.get().strip()
         use_tcp = bool(modbus_tcp)
 
@@ -798,6 +1196,8 @@ class ModpollingTool:
                 shell=False,
                 startupinfo=startupinfo,
                 creationflags=creationflags,
+                bufsize=0,  # No buffering to force immediate output
+                env=dict(os.environ, PYTHONUNBUFFERED="1"),  # Force unbuffered output
             )
 
             # Start threads to read stdout and stderr
@@ -826,89 +1226,101 @@ class ModpollingTool:
 
     def _increment_attempt(self):
         self.poll_attempt_counter += 1
-        self.log_queue.put(('info', f"Attempt {self.poll_attempt_counter}"))
+        # Log every attempt directly to text widget in green
+        self.append_log_direct(f"Attempt {self.poll_attempt_counter}", 'info')
 
     def read_stream(self, stream):
-        for line in iter(stream.readline, ''):
-            line = line.strip()
-            if line:
-                lower_line = line.lower()
-
-                # Skip the specific unwanted lines
-                if "polling slave (ctrl-c to stop) ..." in lower_line:
-                    continue  # Do not log this line
+        # Native Windows console behavior - direct output like CMD
+        import msvcrt
+        
+        buffer = ""
+        while True:
+            # Read character by character like native CMD
+            char = stream.read(1)
+            if not char:
+                break
+            
+            buffer += char
+            
+            # Process complete lines immediately like CMD
+            if char == '\n':
+                line = buffer.strip()
+                buffer = ""
                 
-                # Skip modpoll header and copyright information
-                if any(header_text in line for header_text in [
-                    "modpoll - FieldTalk(tm) Modbus(R) Polling Utility",
-                    "Copyright (c) 2002-2004 FOCUS Software Engineering Pty Ltd",
-                    "Getopt Library Copyright (C) 1987-1997	Free Software Foundation, Inc."
-                ]):
-                    continue  # Do not log these lines
+                if line:
+                    lower_line = line.lower()
 
-                # Handle "Reply time-out!"
-                if "reply time-out!" in lower_line:
-                    self._increment_attempt()
-                    combined_message = "Reply time-out!\nEquipment does not respond."
-                    self.log_queue.put(('error', combined_message))
-                    self.trigger_status_indicator('red')
+                    # Skip the polling slave line - don't show it
+                    if "polling slave (ctrl-c to stop) ..." in lower_line:
+                        continue
+                    
+                    # Skip modpoll header and copyright information
+                    if any(header_text in line for header_text in [
+                        "modpoll - FieldTalk(tm) Modbus(R) Polling Utility",
+                        "Copyright (c) 2002-2004 FOCUS Software Engineering Pty Ltd",
+                        "Getopt Library Copyright (C) 1987-1997	Free Software Foundation, Inc."
+                    ]):
+                        continue  # Do not log these lines
 
-                # Handle "serial port already open"
-                elif "serial port already open" in lower_line:
-                    combined_message = "Serial port already open!\nRemember to stop plant server in IWMAC escape!"
-                    self.log_queue.put(('error', combined_message))
-                    self.trigger_status_indicator('red')
-
-                # Handle "port or socket open error!"
-                elif "port or socket open error!" in lower_line:
-                    combined_message = "Port or socket open error!\nRemember to stop plant server in IWMAC escape!"
-                    self.log_queue.put(('error', combined_message))
-                    self.trigger_status_indicator('red')
-
-                # Handle "checksum error"
-                elif "checksum error" in lower_line:
-                    base_message = "Checksum Error Detected!"
-                    count = self.message_counts.get(base_message, 0) + 1
-                    self.message_counts[base_message] = count
-                    numbered_message = f"{base_message} [{count}]"
-                    self.log_queue.put(('error', numbered_message))
-                    self.trigger_status_indicator('yellow')
-
-                # Handle "illegal function exception response!"
-                elif "illegal function exception response!" in lower_line:
-                    self._increment_attempt()
-                    base_message = "Illegal Function Exception Response!"
-                    self.log_queue.put(('info', base_message))
-                    self.trigger_status_indicator('green')
-
-                # Handle "illegal data address exception response!"
-                elif "illegal data address exception response!" in lower_line:
-                    self._increment_attempt()
-                    base_message = "Illegal Data Address Exception Response!"
-                    self.log_queue.put(('info', base_message))
-                    self.trigger_status_indicator('green')
-
-                # Handle "illegal data value exception response!"
-                elif "illegal data value exception response!" in lower_line:
-                    self._increment_attempt()
-                    base_message = "Illegal Data Value Exception Response!"
-                    self.log_queue.put(('info', base_message))
-                    self.trigger_status_indicator('green')
-
-                # Handle lines like "[100]: 0"
-                elif re.match(r'\[\d+\]', line):
-                    # Detect start of a new polling cycle using the first reference
-                    if self.current_start_reference and line.startswith(f"[{self.current_start_reference}]"):
+                    # Handle "Reply time-out!"
+                    if "reply time-out!" in lower_line:
                         self._increment_attempt()
-                    base_message = line
-                    count = self.message_counts.get(base_message, 0) + 1
-                    self.message_counts[base_message] = count
-                    numbered_message = f"{base_message} [{count}]"
-                    self.log_queue.put(('info', numbered_message))
-                    self.trigger_status_indicator('green')
+                        combined_message = "Reply time-out!\nEquipment does not respond."
+                        self.append_log_direct(combined_message, 'error')
+                        self.trigger_status_indicator('red')
 
-                else:
-                    self.log_queue.put(('normal', line))
+                    # Handle "serial port already open"
+                    elif "serial port already open" in lower_line:
+                        combined_message = "Serial port already open!\nRemember to stop plant server in IWMAC escape!"
+                        self.append_log_direct(combined_message, 'error')
+                        self.trigger_status_indicator('red')
+
+                    # Handle "port or socket open error!"
+                    elif "port or socket open error!" in lower_line:
+                        combined_message = "Port or socket open error!\nRemember to stop plant server in IWMAC escape!"
+                        self.append_log_direct(combined_message, 'error')
+                        self.trigger_status_indicator('red')
+
+                    # Handle "checksum error"
+                    elif "checksum error" in lower_line:
+                        base_message = "Checksum Error Detected!"
+                        count = self.message_counts.get(base_message, 0) + 1
+                        self.message_counts[base_message] = count
+                        numbered_message = f"{base_message} [{count}]"
+                        self.append_log_direct(numbered_message, 'error')
+                        self.trigger_status_indicator('yellow')
+
+                    # Handle "illegal function exception response!"
+                    elif "illegal function exception response!" in lower_line:
+                        self._increment_attempt()
+                        base_message = "Illegal Function Exception Response!"
+                        self.append_log_direct(base_message, 'info')
+                        self.trigger_status_indicator('green')
+
+                    # Handle "illegal data address exception response!"
+                    elif "illegal data address exception response!" in lower_line:
+                        self._increment_attempt()
+                        base_message = "Illegal Data Address Exception Response!"
+                        self.append_log_direct(base_message, 'info')
+                        self.trigger_status_indicator('green')
+
+                    # Handle "illegal data value exception response!"
+                    elif "illegal data value exception response!" in lower_line:
+                        self._increment_attempt()
+                        base_message = "Illegal Data Value Exception Response!"
+                        self.append_log_direct(base_message, 'info')
+                        self.trigger_status_indicator('green')
+
+                    # Handle lines like "[100]: 70" - log exactly as modpoll outputs
+                    elif re.match(r'\[\d+\]', line):
+                        # Detect start of a new polling cycle using the first reference
+                        if self.current_start_reference and line.startswith(f"[{self.current_start_reference}]"):
+                            self._increment_attempt()
+                        self.append_log_direct(line, 'normal')
+                        self.trigger_status_indicator('green')
+
+                    else:
+                        self.append_log_direct(line, 'normal')
         stream.close()
 
     def stop_polling(self):
@@ -949,10 +1361,36 @@ class ModpollingTool:
             self.txt_log.insert(tk.END, f"{message}\n", 'info')
         else:
             self.txt_log.insert(tk.END, f"{message}\n")
+        
+        # Always scroll to end for real-time feel like command line
         self.txt_log.see(tk.END)
+        
         self.txt_log.config(state='disabled')
 
+    def append_log_direct(self, message, tag=None):
+        """Direct logging like a real terminal"""
+        try:
+            self.txt_log.config(state='normal')
+            if tag == 'error':
+                self.txt_log.insert(tk.END, f"{message}\n", 'error')
+            elif tag == 'info':
+                self.txt_log.insert(tk.END, f"{message}\n", 'info')
+            else:
+                self.txt_log.insert(tk.END, f"{message}\n")
+            
+            # Scroll to end like a real terminal
+            self.txt_log.see(tk.END)
+            
+            self.txt_log.config(state='disabled')
+            
+            # Force immediate update like native CMD
+            self.root.update_idletasks()
+        except Exception as e:
+            # Fallback to queue if direct logging fails
+            self.log_queue.put((tag or 'normal', message))
+
     def update_log(self):
+        # Process all available log entries immediately for real-time feel
         while not self.log_queue.empty():
             item = self.log_queue.get()
             if isinstance(item, tuple):
@@ -960,7 +1398,10 @@ class ModpollingTool:
                 self.append_log(message, tag)
             else:
                 self.append_log(item)
-        self.root.after(100, self.update_log)
+        
+        # Update very frequently during polling for real-time behavior
+        update_interval = 10 if self.is_polling else 100
+        self.root.after(update_interval, self.update_log)
 
     def on_closing(self):
         if self.is_polling:
@@ -1072,7 +1513,9 @@ class ModpollingTool:
     def build_and_display_command(self):
         """Build and display the full command based on current settings"""
         # Get current settings
-        com_port = self.cmb_comport.get().strip()
+        com_port_enhanced = self.cmb_comport.get().strip()
+        # Extract actual COM port from enhanced name (e.g., "COM1 - SLV" -> "COM1")
+        com_port = self.extract_com_port_from_enhanced_name(com_port_enhanced)
         modbus_tcp = self.entry_modbus_tcp.get().strip()
         use_tcp = bool(modbus_tcp)
         
