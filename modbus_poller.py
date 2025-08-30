@@ -818,9 +818,40 @@ class ModpollingTool:
                 host = self._decode_str("MTI3LjAuMC4xOjgx")
                 path = self._decode_str("L3NlY3VyZS9zeXNfdG9vbHMvcGxhbnRfZGF0YS5waHA=")
             
-            # Build the URL with HTTPS support (more secure)
-            protocol = "https" if host.startswith("127.0.0.1") else "http"
-            base_url = f"{protocol}://{host}{path}"
+            # Ensure host format is correct (handle IPv4 with port)
+            if host and ':' in host:
+                host_part, port_part = host.split(':', 1)
+                # Validate IPv4 format
+                if host_part == "127.0.0.1" or host_part.count('.') == 3:
+                    host = f"{host_part}:{port_part}"
+                else:
+                    # Invalid host format, use fallback
+                    host = self._decode_str("MTI3LjAuMC4xOjgx")
+            
+            # Build the URL with proper host:port handling - FIXED VERSION
+            try:
+                if ':' in host:
+                    # Separate host and port
+                    host_part, port_part = host.split(':', 1)
+                    # Force IPv4 format and use HTTP for localhost
+                    if host_part == "127.0.0.1":
+                        base_url = f"http://{host_part}:{port_part}{path}"
+                    else:
+                        # For other hosts, check if they're IPv4
+                        if host_part.count('.') == 3:
+                            base_url = f"http://{host_part}:{port_part}{path}"
+                        else:
+                            # Fallback to default
+                            base_url = f"http://127.0.0.1:81{path}"
+                else:
+                    # No port specified, use default
+                    if host == "127.0.0.1":
+                        base_url = f"http://{host}:81{path}"
+                    else:
+                        base_url = f"http://127.0.0.1:81{path}"
+            except Exception as url_build_error:
+                # Fallback to hardcoded safe URL
+                base_url = f"http://127.0.0.1:81{path}"
             params = {
                 'cmd': self._decode_str("dG9wb2xvZ3k="),
                 'type': self._decode_str("dHlwZQ=="),
@@ -828,6 +859,12 @@ class ModpollingTool:
             }
             
             full_url = f"{base_url}?{urllib.parse.urlencode(params)}"
+            
+            # Debug logging for URL construction (only in development)
+            if hasattr(self, 'debug_mode') and self.debug_mode:
+                self.log_queue.put(('info', f"Debug: Host: '{host}', Path: '{path}'"))
+                self.log_queue.put(('info', f"Debug: Base URL: '{base_url}'"))
+                self.log_queue.put(('info', f"Debug: Full URL: '{full_url}'"))
             
             # Create a request with enhanced security headers
             req = urllib.request.Request(full_url)
@@ -848,6 +885,16 @@ class ModpollingTool:
             import base64
             credentials = base64.b64encode(f"{username}:{password}".encode('utf-8')).decode('utf-8')
             req.add_header('Authorization', f'Basic {credentials}')
+            
+            # Validate URL format before making request
+            try:
+                from urllib.parse import urlparse
+                parsed_url = urlparse(full_url)
+                if not parsed_url.netloc:
+                    raise ValueError(f"Invalid URL format: {full_url}")
+            except Exception as url_error:
+                self.log_queue.put(('error', f"URL validation error: {url_error}"))
+                return None
             
             # Make the request with a 5-second timeout
             with urllib.request.urlopen(req, timeout=5) as response:
@@ -932,27 +979,12 @@ class ModpollingTool:
             return None
 
     def _decode_str(self, encoded_str):
-        """Multi-layer obfuscation: XOR + Base64 + Salt for enhanced security."""
+        """Simple base64 decode function for obfuscation."""
         import base64
-        
-        # Salt for additional security (unique per installation)
-        salt = "TKH_ModPoll_2024"
-        
         try:
-            # First layer: Base64 decode
-            decoded = base64.b64decode(encoded_str).decode('utf-8')
-            
-            # Second layer: XOR with salt
-            result = ""
-            salt_bytes = salt.encode('utf-8')
-            for i, char in enumerate(decoded):
-                salt_char = salt_bytes[i % len(salt_bytes)]
-                result += chr(ord(char) ^ salt_char)
-            
-            return result
-        except Exception:
-            # Fallback to simple base64 if multi-layer fails
             return base64.b64decode(encoded_str).decode('utf-8')
+        except Exception:
+            return encoded_str  # Return original if decode fails
 
     def parse_plant_data_for_com_ports(self, plant_data):
         """
