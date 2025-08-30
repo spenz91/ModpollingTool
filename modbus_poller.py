@@ -11,11 +11,26 @@ import re  # For regex matching
 import urllib.request  # For downloading files
 import urllib.error  # For handling download errors
 import shlex  # For parsing command line arguments
+from tkinter import font as tkfont
+
 
 class ModpollingTool:
     def __init__(self, root):
         self.root = root
         self.root.title("ModPolling Tool")
+        
+        # Modern window styling
+        self.root.configure(bg='#F0F0F0')  # Modern light gray background
+        self.root.option_add('*TFrame*background', '#F0F0F0')
+        self.root.option_add('*TLabel*background', '#F0F0F0')
+        self.root.option_add('*TButton*background', '#F0F0F0')
+        
+        # Set window icon if available (optional)
+        try:
+            self.root.iconbitmap('icon.ico')
+        except:
+            pass  # No icon file found, continue without it
+        
         self.modpoll_process = None
         self.is_polling = False
         self.log_queue = queue.Queue()
@@ -124,16 +139,112 @@ class ModpollingTool:
         self.blink_state = False  # To toggle between color and background
         self.blink_count = 0  # To track the number of blinks
 
-        # Define colors
-        self.GREEN_COLOR = "#00FF00"
-        self.GREEN_DIM = "#66FF66"
-        self.YELLOW_COLOR = "#FFFF00"
-        self.YELLOW_DIM = "#FFFF66"
-        self.RED_COLOR = "#FF0000"
-        self.RED_DIM = "#FF6666"
+        # Define modern colors
+        self.GREEN_COLOR = "#10B981"  # Modern green
+        self.GREEN_DIM = "#34D399"    # Lighter green
+        self.YELLOW_COLOR = "#F59E0B"  # Modern amber
+        self.YELLOW_DIM = "#FBBF24"    # Lighter amber
+        self.RED_COLOR = "#EF4444"     # Modern red
+        self.RED_DIM = "#F87171"       # Lighter red
 
         self.create_widgets()
         self.update_log()
+
+    def create_modern_button_styles(self):
+        """
+        Create modern button styles with hover effects and rounded corners.
+        """
+        # Configure modern style for ttk widgets
+        style = ttk.Style()
+        
+        # Modern color scheme
+        modern_colors = {
+            'primary': '#10B981',      # Green
+            'secondary': '#6B7280',    # Gray
+            'danger': '#EF4444',       # Red
+            'success': '#10B981',      # Green
+            'warning': '#F59E0B',      # Amber
+            'info': '#3B82F6',         # Blue
+            'light': '#F9FAFB',        # Light gray
+            'dark': '#1F2937',         # Dark gray
+            'white': '#FFFFFF',        # White
+            'black': '#000000'         # Black
+        }
+        
+        # Store colors for later use
+        self.modern_colors = modern_colors
+
+    def setup_command_preview_bindings(self):
+        """
+        Setup event bindings to automatically update command preview when settings change.
+        """
+        # Basic tab bindings
+        self.cmb_comport.bind('<<ComboboxSelected>>', self.update_command_preview)
+        self.cmb_comport.bind('<KeyRelease>', self.update_command_preview)
+        self.cmb_baudrate.bind('<<ComboboxSelected>>', self.update_command_preview)
+        self.cmb_baudrate.bind('<KeyRelease>', self.update_command_preview)
+        self.cmb_parity.bind('<<ComboboxSelected>>', self.update_command_preview)
+        self.entry_slave_address.bind('<KeyRelease>', self.update_command_preview)
+        
+        # Advanced tab bindings
+        self.cmb_databits.bind('<<ComboboxSelected>>', self.update_command_preview)
+        self.cmb_stopbits.bind('<<ComboboxSelected>>', self.update_command_preview)
+        self.entry_start_reference.bind('<KeyRelease>', self.update_command_preview)
+        self.entry_num_values.bind('<KeyRelease>', self.update_command_preview)
+        self.entry_register_data_type.bind('<KeyRelease>', self.update_command_preview)
+        self.entry_modbus_tcp.bind('<KeyRelease>', self.update_command_preview)
+
+    def update_command_preview(self, event=None):
+        """
+        Update the command preview when any setting changes.
+        """
+        # Only update if not using custom arguments
+        if not self.custom_arguments:
+            self.build_and_display_command()
+
+    def setup_button_hover_effects(self):
+        """
+        Setup hover effects for modern buttons.
+        """
+        # Start button hover effects
+        self.btn_start.bind("<Enter>", lambda e: self.on_button_hover_enter(self.btn_start, "#059669"))
+        self.btn_start.bind("<Leave>", lambda e: self.on_button_hover_leave(self.btn_start, "#10B981"))
+        
+        # Stop button hover effects - only hover when polling is active
+        self.btn_stop.bind("<Enter>", lambda e: self.on_stop_hover_enter())
+        self.btn_stop.bind("<Leave>", lambda e: self.on_stop_hover_leave())
+        
+
+
+    def on_button_hover_enter(self, button, hover_color):
+        """
+        Handle button hover enter event.
+        """
+        if button.cget("state") != "disabled":
+            button.config(bg=hover_color)
+
+    def on_button_hover_leave(self, button, normal_color):
+        """
+        Handle button hover leave event.
+        """
+        if button.cget("state") != "disabled":
+            button.config(bg=normal_color)
+
+
+
+    def on_stop_hover_enter(self):
+        """
+        Handle stop button hover enter event - only hover when polling is active.
+        """
+        if self.is_polling:
+            self.btn_stop.config(bg="#DC2626")
+
+    def on_stop_hover_leave(self):
+        """
+        Handle stop button hover leave event - only hover when polling is active.
+        """
+        if self.is_polling:
+            self.btn_stop.config(bg="#EF4444")
 
     def ensure_modpoll_exists(self):
         r"""
@@ -186,7 +297,7 @@ class ModpollingTool:
 
         # Main Frame
         main_frame = ttk.Frame(self.root)
-        main_frame.grid(row=0, column=0, sticky="NSEW")
+        main_frame.grid(row=0, column=0, sticky="NSEW", padx=10, pady=10)
         main_frame.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)  # Equipment
         main_frame.columnconfigure(1, weight=3)  # Settings
@@ -377,45 +488,80 @@ class ModpollingTool:
         # ---------------- Polling Buttons and Status Indicator ----------------
         # Polling Buttons and Status Indicator are placed in the same frame using grid
         btn_frame = ttk.Frame(self.frame_settings)
-        btn_frame.pack(pady=10, fill='x', expand=True)
+        btn_frame.pack(pady=15, fill='x', expand=True)
 
         # Configure grid in btn_frame
         btn_frame.columnconfigure(0, weight=1)
         btn_frame.columnconfigure(1, weight=1)
-        btn_frame.columnconfigure(2, weight=1)
-        btn_frame.columnconfigure(3, weight=1)
-        btn_frame.columnconfigure(4, weight=1)  # For status indicator
+        btn_frame.columnconfigure(2, weight=1)  # For status indicator
         
         # Store custom command arguments
         self.custom_arguments = None
 
-        # Start Polling Button
-        self.btn_start = ttk.Button(
-            btn_frame, text="Start Polling", command=self.start_polling
+        # Create modern button styles
+        self.create_modern_button_styles()
+
+        # Start Polling Button - Modern Green Style
+        self.btn_start = tk.Button(
+            btn_frame, 
+            text="▶ Start Polling", 
+            command=self.start_polling,
+            font=("Segoe UI", 10, "bold"),
+            bg="#10B981",  # Modern green
+            fg="white",
+            activebackground="#059669",
+            activeforeground="white",
+            relief="flat",
+            bd=0,
+            padx=20,
+            pady=8,
+            cursor="hand2"
         )
         self.btn_start.grid(row=0, column=0, padx=5, pady=5, sticky="e")
 
-        # Stop Polling Button
-        self.btn_stop = ttk.Button(
-            btn_frame, text="Stop Polling", command=self.stop_polling, state="disabled"
+        # Stop Polling Button - Modern Red Style
+        self.btn_stop = tk.Button(
+            btn_frame, 
+            text="■ Stop Polling", 
+            command=self.stop_polling, 
+            state="normal",
+            font=("Segoe UI", 10, "bold"),
+            bg="#FCA5A5",  # Light red when disabled
+            fg="white",
+            activebackground="#DC2626",
+            activeforeground="white",
+            relief="flat",
+            bd=0,
+            padx=20,
+            pady=8,
+            cursor="hand2"
         )
         self.btn_stop.grid(row=0, column=1, padx=5, pady=5, sticky="e")
 
-        # Advanced Button
-        self.btn_advanced = ttk.Button(
-            btn_frame, text="Advanced", command=self.select_advanced_tab
-        )
-        self.btn_advanced.grid(row=0, column=2, padx=5, pady=5, sticky="e")
+        # Store the frame background color
+        self.frame_bg_color = self.root.cget("bg")  # Get the window background color
+
+        # Add hover effects for modern buttons
+        self.setup_button_hover_effects()
 
         # ---------------- Status Indicator ----------------
-        # Create a Canvas for the circular indicator
-        self.status_canvas_size = 30  # Increased size from 20 to 30
-        self.status_canvas = tk.Canvas(btn_frame, width=self.status_canvas_size, height=self.status_canvas_size, highlightthickness=0)
-        self.status_canvas.grid(row=0, column=4, padx=(5, 10), pady=5, sticky="n")  # Centered in the column
+        # Create a Canvas for the modern circular indicator
+        self.status_canvas_size = 48  # Bigger for modern look
+        self.status_canvas = tk.Canvas(
+            btn_frame, 
+            width=self.status_canvas_size, 
+            height=self.status_canvas_size, 
+            highlightthickness=0,
+            bg=self.frame_bg_color  # Use stored background color
+        )
+        self.status_canvas.grid(row=0, column=2, padx=(5, 10), pady=5, sticky="n")  # Centered in the column
 
-        # Draw a circle on the canvas
+        # Draw a modern circle with gradient-like effect
         self.circle = self.status_canvas.create_oval(
-            2, 2, self.status_canvas_size-2, self.status_canvas_size-2, fill="grey"
+            2, 2, self.status_canvas_size-2, self.status_canvas_size-2, 
+            fill="#D1D5DB",  # Light gray for modern look
+            outline="#9CA3AF",  # Medium gray outline
+            width=2
         )
 
         # ---------------- Log Frame (Column 2) ----------------
@@ -479,6 +625,9 @@ class ModpollingTool:
         # Copyright label
         footer_label_right = ttk.Label(footer_frame, text="©TKH")
         footer_label_right.pack(side='right', padx=5, pady=5)
+
+        # Add event bindings for automatic command preview updates (after all widgets are created)
+        self.setup_command_preview_bindings()
 
     def select_advanced_tab(self):
         """Switch to the Advanced tab in the settings notebook."""
@@ -595,17 +744,19 @@ class ModpollingTool:
                 arguments = cmd_text.split()
             else:
                 # Fallback to building arguments directly
-                modbus_tcp_cmd = ["-m", "tcp", modbus_tcp] if use_tcp else [self.format_com_port(com_port)]
-                arguments = modbus_tcp_cmd + [
-                    f"-b{baudrate}",
-                    f"-p{parity}",
-                    f"-d{databits}",
-                    f"-s{stopbits}",
-                    f"-a{adresse}",
-                    f"-r{start_reference}",
-                    f"-c{num_registers}",
-                    f"-t{register_data_type}",
-                ]
+                if use_tcp:
+                    arguments = ["-m", "tcp", modbus_tcp] + [
+                        f"-b{baudrate}",
+                        f"-p{parity}",
+                        f"-d{databits}",
+                        f"-s{stopbits}",
+                        f"-a{adresse}",
+                        f"-r{start_reference}",
+                        f"-c{num_registers}",
+                        f"-t{register_data_type}",
+                    ]
+                else:
+                    arguments = [self.format_com_port(com_port), f"-b{baudrate}", f"-p{parity}", f"-a{adresse}"]
 
         # Reset attempt counter for a new polling session and store first reference
         self.poll_attempt_counter = 0
@@ -780,13 +931,15 @@ class ModpollingTool:
 
     def update_buttons(self):
         if self.is_polling:
-            self.btn_start.config(state="disabled")
-            self.btn_stop.config(state="normal")
-            self.btn_advanced.config(state="disabled")  # Disable Advanced button during polling
+            # Disable start button and change appearance
+            self.btn_start.config(state="disabled", bg="#9CA3AF", fg="#6B7280")
+            # Enable stop button and restore appearance
+            self.btn_stop.config(state="normal", bg="#EF4444", fg="white")
         else:
-            self.btn_start.config(state="normal")
-            self.btn_stop.config(state="disabled")
-            self.btn_advanced.config(state="normal")  # Enable Advanced button when not polling
+            # Enable start button and restore appearance
+            self.btn_start.config(state="normal", bg="#10B981", fg="white")
+            # Show stop button as disabled but keep it enabled for consistent styling
+            self.btn_stop.config(state="normal", bg="#FCA5A5", fg="white")
 
     def append_log(self, message, tag=None):
         self.txt_log.config(state='normal')
@@ -934,6 +1087,7 @@ class ModpollingTool:
         
         # Build command arguments
         if use_tcp:
+            # TCP mode - show full command with all parameters
             modbus_tcp_cmd = ["-m", "tcp", modbus_tcp]
             arguments = modbus_tcp_cmd + [
                 f"-b{baudrate}",
@@ -962,28 +1116,35 @@ class ModpollingTool:
                 except ValueError:
                     pass
                 
-                arguments = [formatted_com_port] + [
-                    f"-b{baudrate}",
-                    f"-p{parity}",
-                    f"-d{databits}",
-                    f"-s{stopbits}",
-                    f"-a{adresse}",
-                    f"-r{start_reference}",
-                    f"-c{num_registers}",
-                    f"-t{register_data_type}",
-                ]
+                # Build basic arguments
+                arguments = [formatted_com_port, f"-b{baudrate}", f"-p{parity}", f"-a{adresse}"]
+                
+                # Add advanced parameters if they differ from defaults
+                if databits != "8":
+                    arguments.append(f"-d{databits}")
+                if stopbits != "1":
+                    arguments.append(f"-s{stopbits}")
+                if start_reference != "100":
+                    arguments.append(f"-r{start_reference}")
+                if num_registers != "1":
+                    arguments.append(f"-c{num_registers}")
+                if register_data_type != "3":
+                    arguments.append(f"-t{register_data_type}")
             else:
                 # Show placeholder if no COM port selected
-                arguments = ["[COM_PORT]"] + [
-                    f"-b{baudrate}",
-                    f"-p{parity}",
-                    f"-d{databits}",
-                    f"-s{stopbits}",
-                    f"-a{adresse}",
-                    f"-r{start_reference}",
-                    f"-c{num_registers}",
-                    f"-t{register_data_type}",
-                ]
+                arguments = ["[COM_PORT]", f"-b{baudrate}", f"-p{parity}", f"-a{adresse}"]
+                
+                # Add advanced parameters if they differ from defaults
+                if databits != "8":
+                    arguments.append(f"-d{databits}")
+                if stopbits != "1":
+                    arguments.append(f"-s{stopbits}")
+                if start_reference != "100":
+                    arguments.append(f"-r{start_reference}")
+                if num_registers != "1":
+                    arguments.append(f"-c{num_registers}")
+                if register_data_type != "3":
+                    arguments.append(f"-t{register_data_type}")
         
         # Update command line display
         self.cmd_var.set(' '.join(arguments))
