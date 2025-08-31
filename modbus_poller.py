@@ -14,6 +14,7 @@ import urllib.parse  # For URL encoding
 import json  # For JSON parsing
 import shlex  # For parsing command line arguments
 from tkinter import font as tkfont
+import datetime
 
 
 class ModpollingTool:
@@ -386,9 +387,7 @@ class ModpollingTool:
         self.advanced_tab = ttk.Frame(self.settings_notebook)
         self.settings_notebook.add(self.advanced_tab, text="Advanced")
         
-        # Units Tab
-        self.units_tab = ttk.Frame(self.settings_notebook)
-        self.settings_notebook.add(self.units_tab, text="Units")
+
 
         # ---------------- Basic Settings Widgets ----------------
 
@@ -491,60 +490,7 @@ class ModpollingTool:
         self.advanced_tab.columnconfigure(0, weight=1)
         self.advanced_tab.columnconfigure(1, weight=3)
 
-        # ---------------- Units Tab Widgets ----------------
-        # Configure grid for Units Tab
-        self.units_tab.columnconfigure(0, weight=1)
-        self.units_tab.columnconfigure(1, weight=1)  # Add weight to center the table
-        self.units_tab.columnconfigure(2, weight=1)  # Add weight to center the table
-        self.units_tab.rowconfigure(1, weight=1)  # Make the treeview expandable
-        
-        # Units Header
-        units_header_frame = ttk.Frame(self.units_tab)
-        units_header_frame.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
-        units_header_frame.columnconfigure(1, weight=1)
-        
-        ttk.Label(units_header_frame, text="Plant Units:", font=("Segoe UI", 10, "bold")).grid(
-            row=0, column=0, sticky="w", padx=5, pady=5
-        )
-        
-        # Refresh Units Button
-        self.btn_refresh_units = ttk.Button(
-            units_header_frame, text="🔄 Refresh Units", command=self.refresh_units
-        )
-        self.btn_refresh_units.grid(row=0, column=1, sticky="e", padx=5, pady=5)
-        
-        # Units Treeview
-        self.units_tree = ttk.Treeview(self.units_tab, columns=("unit_id", "unit_name", "status", "owner", "tree", "ip"), show="headings", height=15)
-        self.units_tree.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
-        
-        # Configure columns with sorting
-        self.units_tree.heading("unit_id", text="Unit ID", command=lambda: self.sort_units_tree("unit_id", False))
-        self.units_tree.heading("unit_name", text="Unit Name", command=lambda: self.sort_units_tree("unit_name", False))
-        self.units_tree.heading("status", text="Status", command=lambda: self.sort_units_tree("status", False))
-        self.units_tree.heading("owner", text="Owner", command=lambda: self.sort_units_tree("owner", False))
-        self.units_tree.heading("tree", text="COM Port", command=lambda: self.sort_units_tree("tree", False))
-        self.units_tree.heading("ip", text="IP Address", command=lambda: self.sort_units_tree("ip", False))
-        
-        # Set column widths and center alignment
-        self.units_tree.column("unit_id", width=80, minwidth=80, anchor="center")
-        self.units_tree.column("unit_name", width=150, minwidth=150, anchor="center")
-        self.units_tree.column("status", width=100, minwidth=100, anchor="center")
-        self.units_tree.column("owner", width=100, minwidth=100, anchor="center")
-        self.units_tree.column("tree", width=80, minwidth=80, anchor="center")
-        self.units_tree.column("ip", width=120, minwidth=120, anchor="center")
-        
-        # Add scrollbar
-        units_scrollbar = ttk.Scrollbar(self.units_tab, orient="vertical", command=self.units_tree.yview)
-        units_scrollbar.grid(row=1, column=2, sticky="ns")
-        self.units_tree.configure(yscrollcommand=units_scrollbar.set)
-        
-        # Status label for units
-        self.units_status_label = ttk.Label(self.units_tab, text="Click 'Refresh Units' to load unit data", foreground="gray")
-        self.units_status_label.grid(row=2, column=1, sticky="w", padx=5, pady=5)
-        
-        # Initialize sorting state
-        self.units_sort_column = None
-        self.units_sort_reverse = False
+
 
         # ---------------- Polling Buttons and Status Indicator ----------------
         # Polling Buttons and Status Indicator are placed in the same frame using grid
@@ -686,11 +632,7 @@ class ModpollingTool:
             ),
         )
 
-        # Refresh plant data button
-        btn_refresh_plant = ttk.Button(
-            footer_frame, text="Refresh Plant Data", command=self.refresh_plant_data
-        )
-        btn_refresh_plant.pack(side='left', padx=5, pady=5)
+
 
 
 
@@ -758,225 +700,25 @@ class ModpollingTool:
 
     def get_enhanced_com_port_names(self, com_ports):
         """
-        Get enhanced COM port names from plant data.
-        Returns list of COM ports with enhanced names like "COM1 - SLV".
+        API functionality has been removed.
+        Returns original COM port names without enhancement.
         """
-        enhanced_ports = []
-        
-        # Try to fetch plant data for COM port information
-        try:
-            plant_data = self.fetch_plant_data()
-            if plant_data:
-                # Create a mapping of COM ports to their enhanced names
-                com_port_mapping = self.parse_plant_data_for_com_ports(plant_data)
-                
-                # Log the mapping for debugging
-                if com_port_mapping:
-                    pass  # Removed detailed logging
-                
-                for com_port in com_ports:
-                    if com_port in com_port_mapping:
-                        enhanced_ports.append(com_port_mapping[com_port])
-                    else:
-                        enhanced_ports.append(com_port)
-            else:
-                # If plant data is not available, use original COM port names
-                enhanced_ports = com_ports
-                pass  # Removed verbose logging
-        except Exception as e:
-            self.log_queue.put(('info', f"Could not fetch plant data for COM port names: {e}"))
-            enhanced_ports = com_ports
-            
-        return enhanced_ports
+        # API functionality has been removed, return original COM port names
+        return com_ports
 
-    def refresh_plant_data(self):
-        """
-        Manually refresh plant data and update COM port names.
-        """
-        self.log_queue.put(('info', "Refreshing plant data..."))
-        self.refresh_comports()
+
 
 
 
     def fetch_plant_data(self):
         """
-        Fetch plant data from the topology API with authentication.
-        Returns the JSON response or None if failed.
+        API functionality has been removed.
+        Returns None as no API calls are made.
         """
-        try:
-            # Try environment variables first (most secure)
-            import os
-            username = os.getenv('MODPOLL_USERNAME')
-            password = os.getenv('MODPOLL_PASSWORD')
-            host = os.getenv('MODPOLL_HOST')
-            path = os.getenv('MODPOLL_PATH')
-            
-            # Fallback to obfuscated values if environment variables not set
-            if not all([username, password, host, path]):
-                username = self._decode_str("aXdtYWM=")
-                password = self._decode_str("U2pha2sgPEVyIEJhcmUhIEZvciAy")
-                host = self._decode_str("MTI3LjAuMC4xOjgx")
-                path = self._decode_str("L3NlY3VyZS9zeXNfdG9vbHMvcGxhbnRfZGF0YS5waHA=")
-            
-            # Ensure host format is correct (handle IPv4 with port)
-            if host and ':' in host:
-                host_part, port_part = host.split(':', 1)
-                # Validate IPv4 format
-                if host_part == "127.0.0.1" or host_part.count('.') == 3:
-                    host = f"{host_part}:{port_part}"
-                else:
-                    # Invalid host format, use fallback
-                    host = self._decode_str("MTI3LjAuMC4xOjgx")
-            
-            # Build the URL with proper host:port handling - FIXED VERSION
-            try:
-                if ':' in host:
-                    # Separate host and port
-                    host_part, port_part = host.split(':', 1)
-                    # Force IPv4 format and use HTTP for localhost
-                    if host_part == "127.0.0.1":
-                        base_url = f"http://{host_part}:{port_part}{path}"
-                    else:
-                        # For other hosts, check if they're IPv4
-                        if host_part.count('.') == 3:
-                            base_url = f"http://{host_part}:{port_part}{path}"
-                        else:
-                            # Fallback to default
-                            base_url = f"http://127.0.0.1:81{path}"
-                else:
-                    # No port specified, use default
-                    if host == "127.0.0.1":
-                        base_url = f"http://{host}:81{path}"
-                    else:
-                        base_url = f"http://127.0.0.1:81{path}"
-            except Exception as url_build_error:
-                # Fallback to hardcoded safe URL
-                base_url = f"http://127.0.0.1:81{path}"
-            params = {
-                'cmd': self._decode_str("dG9wb2xvZ3k="),
-                'type': self._decode_str("dHlwZQ=="),
-                'request': self._decode_str("eyJsaW1pdCI6MTAwLCJvZmZzZXQiOjAsInNvcnQiOlt7ImZpZWxkIjoibWFuX3N0YXJ0IiwiZGlyZWN0aW9uIjoiYXNjIn1dfQ==")
-            }
-            
-            full_url = f"{base_url}?{urllib.parse.urlencode(params)}"
-            
-            # Debug logging for URL construction (only in development)
-            if hasattr(self, 'debug_mode') and self.debug_mode:
-                self.log_queue.put(('info', f"Debug: Host: '{host}', Path: '{path}'"))
-                self.log_queue.put(('info', f"Debug: Base URL: '{base_url}'"))
-                self.log_queue.put(('info', f"Debug: Full URL: '{full_url}'"))
-            
-            # Create a request with enhanced security headers
-            req = urllib.request.Request(full_url)
-            req.add_header('User-Agent', 'ModPollingTool/1.0')
-            
-            # Add request timestamp for replay protection
-            import time
-            timestamp = str(int(time.time()))
-            req.add_header('X-Request-Timestamp', timestamp)
-            
-            # Add request signature for integrity verification
-            import hashlib
-            signature_data = f"{username}:{timestamp}:{host}"
-            request_signature = hashlib.sha256(signature_data.encode('utf-8')).hexdigest()
-            req.add_header('X-Request-Signature', request_signature)
-            
-            # Add basic authentication header
-            import base64
-            credentials = base64.b64encode(f"{username}:{password}".encode('utf-8')).decode('utf-8')
-            req.add_header('Authorization', f'Basic {credentials}')
-            
-            # Validate URL format before making request
-            try:
-                from urllib.parse import urlparse
-                parsed_url = urlparse(full_url)
-                if not parsed_url.netloc:
-                    raise ValueError(f"Invalid URL format: {full_url}")
-            except Exception as url_error:
-                self.log_queue.put(('error', f"URL validation error: {url_error}"))
-                return None
-            
-            # Make the request with a 5-second timeout
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = response.read()
-                plant_data = json.loads(data.decode('utf-8'))
-                self.log_queue.put(('info', "Successfully fetched plant data!"))
-                return plant_data
-                
-        except urllib.error.URLError as e:
-            error_msg = str(e)
-            if "10061" in error_msg or "refused" in error_msg.lower():
-                pass  # Removed verbose logging
-            else:
-                pass  # Removed verbose logging
-            return None
-        except urllib.error.HTTPError as e:
-            self.log_queue.put(('info', f"HTTP error {e.code} from plant data API: {e.reason}"))
-            return None
-        except json.JSONDecodeError as e:
-            self.log_queue.put(('error', f"Invalid JSON response from plant data API: {e}"))
-            return None
-        except Exception as e:
-            self.log_queue.put(('error', f"Unexpected error fetching plant data: {e}"))
-            return None
+        self.log_queue.put(('info', "API functionality has been removed from this application."))
+        return None
 
-    def _save_secure_config(self, config_data):
-        """Save configuration data with encryption for enhanced security."""
-        try:
-            import os
-            import json
-            from cryptography.fernet import Fernet
-            
-            # Generate or load encryption key
-            key_file = "config.key"
-            if os.path.exists(key_file):
-                with open(key_file, 'rb') as f:
-                    key = f.read()
-            else:
-                key = Fernet.generate_key()
-                with open(key_file, 'wb') as f:
-                    f.write(key)
-            
-            # Encrypt and save configuration
-            cipher = Fernet(key)
-            encrypted_data = cipher.encrypt(json.dumps(config_data).encode())
-            
-            with open("secure_config.enc", 'wb') as f:
-                f.write(encrypted_data)
-                
-            return True
-        except ImportError:
-            # Fallback if cryptography not available
-            return False
-        except Exception:
-            return False
 
-    def _load_secure_config(self):
-        """Load encrypted configuration data."""
-        try:
-            import os
-            import json
-            from cryptography.fernet import Fernet
-            
-            if not (os.path.exists("config.key") and os.path.exists("secure_config.enc")):
-                return None
-            
-            # Load encryption key and decrypt data
-            with open("config.key", 'rb') as f:
-                key = f.read()
-            
-            with open("secure_config.enc", 'rb') as f:
-                encrypted_data = f.read()
-            
-            cipher = Fernet(key)
-            decrypted_data = cipher.decrypt(encrypted_data)
-            
-            return json.loads(decrypted_data.decode())
-        except ImportError:
-            # Fallback if cryptography not available
-            return None
-        except Exception:
-            return None
 
     def _decode_str(self, encoded_str):
         """Simple base64 decode function for obfuscation."""
@@ -986,202 +728,9 @@ class ModpollingTool:
         except Exception:
             return encoded_str  # Return original if decode fails
 
-    def parse_plant_data_for_com_ports(self, plant_data):
-        """
-        Parse plant data to extract COM port mappings.
-        Expected format from API: {"tree": "COM1 - 192.168.10.31", "w2ui": {"children": [{"owner": "SLV"}]}}
-        Returns: {"COM1": "COM1 - SLV"}
-        """
-        com_port_mapping = {}
-        ip_address = ""
-        
-        try:
-            # Parse the JSON structure from the API
-            if isinstance(plant_data, list):
-                for item in plant_data:
-                    if isinstance(item, dict) and 'w2ui' in item:
-                        w2ui_data = item.get('w2ui', {})
-                        if 'children' in w2ui_data:
-                            for child in w2ui_data['children']:
-                                if isinstance(child, dict):
-                                    tree_info = child.get('tree', '')
-                                    
-                                    # Extract IP address from tree info (e.g., "COM1 - 192.168.10.31")
-                                    ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', tree_info)
-                                    if ip_match and not ip_address:
-                                        ip_address = ip_match.group(1)
-                                    
-                                    # Look for COM port in tree info (e.g., "COM1 - 192.168.10.31")
-                                    com_match = re.search(r'COM(\d+)', tree_info)
-                                    if com_match:
-                                        com_port = f"COM{com_match.group(1)}"
-                                        
-                                        # Look for owner in the children of this COM port
-                                        if 'w2ui' in child and 'children' in child['w2ui']:
-                                            for unit in child['w2ui']['children']:
-                                                if isinstance(unit, dict) and 'owner' in unit:
-                                                    owner = unit.get('owner', '')
-                                                    
-                                                    if owner:
-                                                        enhanced_name = f"{com_port} - {owner}"
-                                                        com_port_mapping[com_port] = enhanced_name
-                                                        break  # Use the first owner found
-                                
-        except Exception as e:
-            self.log_queue.put(('error', f"Error parsing plant data: {e}"))
-        
-        # Display summary if mappings were found
-        if com_port_mapping:
-            self.log_queue.put(('info', f"Found {len(com_port_mapping)} COM port mappings!"))
-            if ip_address:
-                self.log_queue.put(('info', f"IP adresse: '{ip_address}'"))
-            for com_port, enhanced_name in sorted(com_port_mapping.items()):
-                owner = enhanced_name.split(' - ')[1] if ' - ' in enhanced_name else enhanced_name
-                self.log_queue.put(('info', f"☑ {com_port} -> {owner}"))
-            
-        return com_port_mapping
 
-    def parse_units_data(self, plant_data):
-        """
-        Parse plant data to extract unit information.
-        Returns a list of dictionaries with unit details.
-        """
-        units = []
-        
-        try:
-            if isinstance(plant_data, list):
-                for item in plant_data:
-                    if isinstance(item, dict) and 'w2ui' in item:
-                        w2ui_data = item.get('w2ui', {})
-                        if 'children' in w2ui_data:
-                            for child in w2ui_data['children']:
-                                if isinstance(child, dict):
-                                    tree_info = child.get('tree', '')
-                                    
-                                    # Extract COM port and IP from tree info (e.g., "COM1 - 192.168.10.31")
-                                    com_match = re.search(r'COM(\d+)', tree_info)
-                                    ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', tree_info)
-                                    
-                                    com_port = f"COM{com_match.group(1)}" if com_match else ""
-                                    ip_address = ip_match.group(1) if ip_match else ""
-                                    
-                                    # Look for units in the children of this COM port
-                                    if 'w2ui' in child and 'children' in child['w2ui']:
-                                        for unit in child['w2ui']['children']:
-                                            if isinstance(unit, dict):
-                                                unit_info = {
-                                                    'unit_id': unit.get('unit_id', ''),
-                                                    'status': unit.get('status', ''),
-                                                    'owner': unit.get('owner', ''),
-                                                    'unit_name': unit.get('unit_name', ''),
-                                                    'tree': com_port,
-                                                    'ip': ip_address
-                                                }
-                                                units.append(unit_info)
-                                
-        except Exception as e:
-            self.log_queue.put(('error', f"Error parsing units data: {e}"))
-            
-        return units
 
-    def refresh_units(self):
-        """
-        Fetch and display units data from the API.
-        """
-        def refresh_thread():
-            try:
-                self.units_status_label.config(text="Fetching units data...", foreground="blue")
-                self.btn_refresh_units.config(state="disabled")
-                
-                # Clear existing items
-                for item in self.units_tree.get_children():
-                    self.units_tree.delete(item)
-                
-                # Fetch plant data
-                plant_data = self.fetch_plant_data()
-                
-                if plant_data:
-                    # Parse units data
-                    units = self.parse_units_data(plant_data)
-                    
-                    if units:
-                        # Add units to treeview
-                        for unit in units:
-                            self.units_tree.insert('', 'end', values=(
-                                unit['unit_id'],
-                                unit['unit_name'],
-                                unit['status'],
-                                unit['owner'],
-                                unit['tree'],
-                                unit['ip']
-                            ))
-                        
-                        self.units_status_label.config(
-                            text=f"Loaded {len(units)} units successfully", 
-                            foreground="green"
-                        )
-                        self.log_queue.put(('info', f"Successfully loaded {len(units)} units"))
-                    else:
-                        self.units_status_label.config(
-                            text="No units found in plant data", 
-                            foreground="orange"
-                        )
-                        self.log_queue.put(('info', "No units found in plant data"))
-                else:
-                    self.units_status_label.config(
-                        text="Failed to fetch plant data", 
-                        foreground="red"
-                    )
-                    self.log_queue.put(('error', "Failed to fetch plant data"))
-                    
-            except Exception as e:
-                self.units_status_label.config(
-                    text=f"Error: {str(e)}", 
-                    foreground="red"
-                )
-                self.log_queue.put(('error', f"Error refreshing units: {e}"))
-            finally:
-                self.btn_refresh_units.config(state="normal")
-        
-        # Run in separate thread to avoid blocking UI
-        threading.Thread(target=refresh_thread, daemon=True).start()
 
-    def sort_units_tree(self, col, reverse):
-        """
-        Sort tree contents when a column header is clicked.
-        """
-        try:
-            # Get all items from the tree
-            items = [(self.units_tree.set(item, col), item) for item in self.units_tree.get_children('')]
-            
-            # Sort the items
-            items.sort(reverse=reverse)
-            
-            # Rearrange items in sorted positions
-            for index, (val, item) in enumerate(items):
-                self.units_tree.move(item, '', index)
-            
-            # Update sorting state
-            self.units_sort_column = col
-            self.units_sort_reverse = reverse
-            
-            # Update column headers to show sort direction
-            for column in ("unit_id", "unit_name", "status", "owner", "tree", "ip"):
-                if column == col:
-                    # Add arrow to show sort direction
-                    arrow = " ▼" if reverse else " ▲"
-                    current_text = self.units_tree.heading(column)['text'].replace(" ▲", "").replace(" ▼", "")
-                    self.units_tree.heading(column, text=current_text + arrow)
-                else:
-                    # Remove arrows from other columns
-                    current_text = self.units_tree.heading(column)['text'].replace(" ▲", "").replace(" ▼", "")
-                    self.units_tree.heading(column, text=current_text)
-            
-            # Toggle reverse for next click
-            self.units_tree.heading(col, command=lambda: self.sort_units_tree(col, not reverse))
-            
-        except Exception as e:
-            self.log_queue.put(('error', f"Error sorting units table: {e}"))
 
     def extract_com_port_from_enhanced_name(self, enhanced_name):
         """
@@ -1811,6 +1360,8 @@ class ModpollingTool:
                 self.blink_job = None
 
     # ---------------- End of Status Indicator Methods ----------------
+
+
 
 if __name__ == "__main__":
     root = tk.Tk()
