@@ -8,10 +8,7 @@ import queue
 import webbrowser  # For opening URLs
 import winreg  # For registry access
 import re  # For regex matching
-import urllib.request  # For downloading files
-import urllib.error  # For handling download errors
-import urllib.parse  # For URL encoding
-import json  # For JSON parsing
+
 import shlex  # For parsing command line arguments
 from tkinter import font as tkfont
 import datetime
@@ -654,7 +651,7 @@ class ModpollingTool:
         Refresh the list of available COM ports by combining:
         1. COM ports detected by pySerial.
         2. COM ports detected via registry scan.
-        3. Enhanced names from plant data (if available).
+
         """
         ports = serial.tools.list_ports.comports()
         com_ports_serial = [port.device for port in ports]
@@ -663,21 +660,12 @@ class ModpollingTool:
 
         # Combine both lists and remove duplicates
         combined_com_ports = sorted(list(set(com_ports_serial + com_ports_registry)))
-        
-        # Get enhanced COM port names from plant data
-        enhanced_com_ports = self.get_enhanced_com_port_names(combined_com_ports)
 
-        # Update the combobox values with enhanced names
-        self.cmb_comport['values'] = enhanced_com_ports
-
-        # Log the available COM ports
-        if enhanced_com_ports:
-            pass  # Removed detailed logging
-        else:
-            pass  # Removed verbose logging
+        # Update the combobox values
+        self.cmb_comport['values'] = combined_com_ports
 
         # If there are available COM ports, select the first one
-        if enhanced_com_ports:
+        if combined_com_ports:
             self.cmb_comport.current(0)
         else:
             self.cmb_comport.set('')
@@ -698,25 +686,13 @@ class ModpollingTool:
             self.log_queue.put(('error', "Error! Cannot find COM ports. Type in the COM port manually."))
         return com_ports
 
-    def get_enhanced_com_port_names(self, com_ports):
-        """
-        API functionality has been removed.
-        Returns original COM port names without enhancement.
-        """
-        # API functionality has been removed, return original COM port names
-        return com_ports
 
 
 
 
 
-    def fetch_plant_data(self):
-        """
-        API functionality has been removed.
-        Returns None as no API calls are made.
-        """
-        self.log_queue.put(('info', "API functionality has been removed from this application."))
-        return None
+
+
 
 
 
