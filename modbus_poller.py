@@ -12,13 +12,19 @@ import re  # For regex matching
 import shlex  # For parsing command line arguments
 from tkinter import font as tkfont
 import datetime
-import urllib.request, urllib.error
+import urllib
+import urllib.request
+import urllib.error
 
 
 class ModpollingTool:
     def __init__(self, root):
         self.root = root
         self.root.title("ModPolling Tool")
+        
+        # Set smaller default window size
+        self.root.geometry("1195x628")  # Exact size requested by user
+        self.root.minsize(1000, 600)   # Minimum size to ensure usability
         
         # Modern window styling
         self.root.configure(bg='#F0F0F0')  # Modern light gray background
@@ -38,11 +44,8 @@ class ModpollingTool:
         
         # Default modpoll path
         self.modpoll_path = r"C:\iwmac\bin\modpoll.exe"
-        # MySQL client path and connection settings
-        self.mysql_path = r"C:\iwmac\mysql\bin\mysql.exe"
-        self.mysql_host = "127.0.0.1"
-        self.mysql_user = "iwmac"
-        self.mysql_db = "iw_plant_server3"
+        # Default MySQL client path
+        self.mysql_exe_path = r"C:\iwmac\mysql\bin\mysql.exe"
         
         # Ensure modpoll.exe exists, download if needed
         self.ensure_modpoll_exists()
@@ -305,13 +308,15 @@ class ModpollingTool:
         main_frame = ttk.Frame(self.root)
         main_frame.grid(row=0, column=0, sticky="NSEW", padx=10, pady=10)
         main_frame.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(0, weight=1)  # Equipment
-        main_frame.columnconfigure(1, weight=3)  # Settings
-        main_frame.columnconfigure(2, weight=2)  # Log
+        main_frame.columnconfigure(0, weight=1)
 
-        # Equipment Frame (Column 0)
-        self.frame_equipment = ttk.LabelFrame(main_frame, text="Equipment")
-        self.frame_equipment.grid(row=0, column=0, sticky="NSEW", padx=5, pady=5)
+        # Create a PanedWindow for resizable sections
+        self.paned_window = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
+        self.paned_window.grid(row=0, column=0, sticky="NSEW")
+
+        # Equipment Frame (Column 0) - Left pane
+        self.frame_equipment = ttk.LabelFrame(self.paned_window, text="Equipment")
+        self.paned_window.add(self.frame_equipment, weight=10)  # Fixed size for Equipment (smaller)
         self.frame_equipment.rowconfigure(1, weight=1)  # Changed from 0 to 1 to make room for search
         self.frame_equipment.columnconfigure(0, weight=1)
 
@@ -319,29 +324,34 @@ class ModpollingTool:
         search_frame = ttk.Frame(self.frame_equipment)
         search_frame.grid(row=0, column=0, sticky="EW", padx=5, pady=(5, 0))
         search_frame.columnconfigure(0, weight=1)
+        search_frame.columnconfigure(1, weight=3)
+        search_frame.columnconfigure(2, weight=0)
 
         # Search Label and Entry
-        ttk.Label(search_frame, text="Search:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(search_frame, text="Search:").grid(row=0, column=0, sticky="W", padx=(0, 5))
         self.search_var = tk.StringVar()
         self.search_var.trace('w', self.filter_equipment)  # Bind to search changes
         self.entry_search = ttk.Entry(search_frame, textvariable=self.search_var, width=20)
-        self.entry_search.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.entry_search.grid(row=0, column=1, sticky="EW", padx=(0, 5))
 
         # Clear search button
         btn_clear_search = ttk.Button(search_frame, text="X", width=3, command=self.clear_search)
-        btn_clear_search.pack(side=tk.RIGHT)
+        btn_clear_search.grid(row=0, column=2, sticky="E")
 
         # Create a frame to hold the Listbox and Scrollbar (Row 1)
         listbox_frame = ttk.Frame(self.frame_equipment)
         listbox_frame.grid(row=1, column=0, sticky="NSEW", padx=5, pady=5)
+        listbox_frame.rowconfigure(0, weight=1)
+        listbox_frame.columnconfigure(0, weight=1)
+        listbox_frame.columnconfigure(1, weight=0)
 
         # Equipment Listbox
         self.listbox_equipment = tk.Listbox(listbox_frame, height=18)  # Reduced height to make room for search
-        self.listbox_equipment.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.listbox_equipment.grid(row=0, column=0, sticky="NSEW")
 
         # Scrollbar for the Listbox
         scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=self.listbox_equipment.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar.grid(row=0, column=1, sticky="NS")
 
         # Configure the Listbox to work with the Scrollbar
         self.listbox_equipment.config(yscrollcommand=scrollbar.set)
@@ -373,8 +383,8 @@ class ModpollingTool:
         btn_select.grid(row=2, column=0, pady=(0, 10))  # Changed from row=1 to row=2
 
         # Settings Frame with Notebook for Basic and Advanced Tabs (Column 1)
-        self.frame_settings = ttk.LabelFrame(main_frame, text="Settings")
-        self.frame_settings.grid(row=0, column=1, sticky="NSEW", padx=5, pady=5)
+        self.frame_settings = ttk.LabelFrame(self.paned_window, text="Settings")
+        self.paned_window.add(self.frame_settings, weight=40)  # Bigger weight for Settings
         self.frame_settings.rowconfigure(0, weight=1)
         self.frame_settings.columnconfigure(0, weight=1)
 
@@ -390,14 +400,7 @@ class ModpollingTool:
         self.advanced_tab = ttk.Frame(self.settings_notebook)
         self.settings_notebook.add(self.advanced_tab, text="Advanced")
         
-        # Units Tab
-        self.units_tab = ttk.Frame(self.settings_notebook)
-        self.settings_notebook.add(self.units_tab, text="Units")
-        
-
-
         # ---------------- Basic Settings Widgets ----------------
-
         # COM Port
         ttk.Label(self.basic_tab, text="COM Port:").grid(
             column=0, row=0, sticky="W", padx=5, pady=5, ipadx=5
@@ -441,7 +444,6 @@ class ModpollingTool:
         self.entry_slave_address.insert(0, "1")
 
         # ---------------- Advanced Settings Widgets ----------------
-
         # Data Bits
         ttk.Label(self.advanced_tab, text="Data Bits (-d):").grid(
             column=0, row=0, sticky="W", padx=5, pady=5
@@ -496,28 +498,7 @@ class ModpollingTool:
         # Adjust column weights in Advanced Tab for better layout
         self.advanced_tab.columnconfigure(0, weight=1)
         self.advanced_tab.columnconfigure(1, weight=3)
-
-        # ---------------- Units Tab Widgets ----------------
-        self.units_tab.columnconfigure(0, weight=1)
-        self.units_tab.rowconfigure(1, weight=1)
-
-        self.btn_get_units = ttk.Button(self.units_tab, text="Get units data", command=self.on_get_units_data)
-        self.btn_get_units.grid(row=0, column=0, sticky="w", padx=5, pady=5)
-
-        columns = ("unit_id", "unit_name", "driver_type", "driver_addr", "regulator_type")
-        self.units_tree = ttk.Treeview(self.units_tab, columns=columns, show='headings', height=12)
-        for col in columns:
-            self.units_tree.heading(col, text=col, anchor="center")
-            self.units_tree.column(col, anchor="center", width=140)
-
-        scrollbar_units = ttk.Scrollbar(self.units_tab, orient=tk.VERTICAL, command=self.units_tree.yview)
-        self.units_tree.configure(yscrollcommand=scrollbar_units.set)
-        self.units_tree.grid(row=1, column=0, sticky="NSEW", padx=(5,0), pady=(0,5))
-        scrollbar_units.grid(row=1, column=1, sticky="NS", padx=(0,5), pady=(0,5))
-
-
-
-
+        
         # ---------------- Polling Buttons and Status Indicator ----------------
         # Polling Buttons and Status Indicator are placed in the same frame using grid
         btn_frame = ttk.Frame(self.frame_settings)
@@ -537,7 +518,7 @@ class ModpollingTool:
         # Start Polling Button - Modern Green Style
         self.btn_start = tk.Button(
             btn_frame, 
-            text="Start Polling",
+            text="Start Polling", 
             command=self.start_polling,
             font=("Segoe UI", 10, "bold"),
             bg="#10B981",  # Modern green
@@ -556,7 +537,7 @@ class ModpollingTool:
         self.btn_stop = tk.Button(
             btn_frame, 
             text="Stop Polling", 
-            command=self.stop_polling, 
+            command=self.stop_polling,
             state="normal",
             font=("Segoe UI", 10, "bold"),
             bg="#FCA5A5",  # Light red when disabled
@@ -596,27 +577,186 @@ class ModpollingTool:
             outline="#9CA3AF",  # Medium gray outline
             width=2
         )
-
+        
+        # Units Tab
+        self.units_tab = ttk.Frame(self.settings_notebook)
+        self.settings_notebook.add(self.units_tab, text="Units")
+        
+        # ---------------- Units Tab Widgets ----------------
+        # Controls frame (row 0)
+        units_controls = ttk.Frame(self.units_tab)
+        units_controls.grid(row=0, column=0, sticky="EW", padx=5, pady=5)
+        
+        self.btn_get_units = ttk.Button(units_controls, text="Get units data", command=self.handle_get_units)
+        self.btn_get_units.pack(side=tk.LEFT)
+        
+        # Table (Treeview) with scrollbar (row 1)
+        units_table_frame = ttk.Frame(self.units_tab)
+        units_table_frame.grid(row=1, column=0, sticky="NSEW", padx=5, pady=5)
+        self.units_tab.rowconfigure(1, weight=1)
+        self.units_tab.columnconfigure(0, weight=1)
+        
+        # Configure the table frame to be expandable
+        units_table_frame.rowconfigure(0, weight=1)
+        units_table_frame.columnconfigure(0, weight=1)
+        
+        columns = ("unit_id", "unit_name", "driver_type", "driver_addr", "regulator_type", "ip_address", "com_port")
+        self.units_tree = ttk.Treeview(units_table_frame, columns=columns, show="headings")
+        # Define user-friendly column headers
+        column_headers = {
+            "unit_id": "Unit ID",
+            "unit_name": "Unit Name", 
+            "driver_type": "Driver Type",
+            "driver_addr": "Driver Address",
+            "regulator_type": "Regulator Type",
+            "ip_address": "IP Address",
+            "com_port": "COM Port"
+        }
+        
+        # Set column widths - make them very wide to ensure ALL text is visible with no cutoff
+        column_widths = {
+            "unit_id": 200,
+            "unit_name": 300, 
+            "driver_type": 250,
+            "driver_addr": 250,
+            "regulator_type": 300,
+            "ip_address": 800,  # IP Address column (now before COM Port)
+            "com_port": 200     # COM Port column (now after IP Address)
+        }
+        
+        for col in columns:
+            self.units_tree.heading(col, text=column_headers.get(col, col))
+            # Set columns to auto-size to content with minimum width
+            self.units_tree.column(col, anchor="w", minwidth=100, stretch=True)
+        
+        # Create scrollbars - both vertical and horizontal
+        units_v_scrollbar = ttk.Scrollbar(units_table_frame, orient="vertical", command=self.units_tree.yview)
+        units_h_scrollbar = ttk.Scrollbar(units_table_frame, orient="horizontal", command=self.units_tree.xview)
+        
+        # Configure the treeview to work with both scrollbars
+        self.units_tree.configure(yscrollcommand=units_v_scrollbar.set, xscrollcommand=units_h_scrollbar.set)
+        
+        # Use grid layout for proper resizing behavior
+        self.units_tree.grid(row=0, column=0, sticky="NSEW")
+        units_v_scrollbar.grid(row=0, column=1, sticky="NS")
+        units_h_scrollbar.grid(row=1, column=0, sticky="EW")
+        
+        # Configure grid weights for the table frame
+        units_table_frame.columnconfigure(0, weight=1)
+        units_table_frame.rowconfigure(0, weight=1)
+        units_table_frame.rowconfigure(1, weight=0)  # Horizontal scrollbar row doesn't expand
+        
+        # Ensure the treeview can expand to show all content
+        def on_treeview_resize(event):
+            # Update column widths when treeview is resized
+            tree_width = event.width
+            col_count = len(columns)
+            if col_count > 0:
+                # Distribute width evenly among columns with minimum width
+                col_width = max(200, tree_width // col_count)
+                for col in columns:
+                    # Get the minimum width for this column
+                    min_width = column_widths.get(col, 200)
+                    # Use the larger of calculated width or minimum width
+                    final_width = max(col_width, min_width)
+                    self.units_tree.column(col, width=final_width)
+        
+        self.units_tree.bind("<Configure>", on_treeview_resize)
+        
+        # Function to auto-size columns to fit content exactly
+        def auto_size_columns():
+            """Automatically size columns to fit the biggest word in each column with no extra space."""
+            try:
+                # Get all items in the treeview
+                items = self.units_tree.get_children()
+                if not items:
+                    return
+                
+                # Calculate optimal width for each column
+                for col in columns:
+                    # Start with header width
+                    header_text = column_headers.get(col, col)
+                    header_width = len(header_text) * 8  # Approximate character width
+                    max_width = header_width
+                    
+                    # Check all values in this column
+                    for item in items:
+                        value = self.units_tree.set(item, col)
+                        if value:
+                            # Calculate width needed for this value
+                            value_width = len(str(value)) * 8  # Approximate character width
+                            max_width = max(max_width, value_width)
+                    
+                    # Set column width to exactly fit content (minimal padding)
+                    optimal_width = max_width + 5  # Minimal padding (reduced from 10 to 5)
+                    
+                    # Get minimum width for this column (especially important for IP Address)
+                    min_width = column_widths.get(col, 200)
+                    
+                    # Set column width to the larger of: content width or minimum width
+                    optimal_width = max(optimal_width, min_width)
+                    
+                    self.units_tree.column(col, width=optimal_width)
+                    
+            except Exception as e:
+                print(f"Error in auto_size_columns: {e}")
+        
+        # Store the auto-size function for later use
+        self.auto_size_columns = auto_size_columns
+        
         # ---------------- Log Frame (Column 2) ----------------
-        self.frame_log = ttk.LabelFrame(main_frame, text="Log")
-        self.frame_log.grid(row=0, column=2, sticky="NSEW", padx=5, pady=5)
+        self.frame_log = ttk.LabelFrame(self.paned_window, text="Log")
+        self.paned_window.add(self.frame_log, weight=50)  # Smaller weight for Log
         self.frame_log.rowconfigure(1, weight=1)  # Changed from 0 to 1 to make room for command line
         self.frame_log.columnconfigure(0, weight=1)
+        
+        # Set better default pane sizes after the window is fully loaded
+        def set_default_pane_sizes():
+            try:
+                # Wait for the window to be fully loaded
+                self.root.update_idletasks()
+                
+                # Get the total width of the paned window
+                total_width = self.paned_window.winfo_width()
+                if total_width > 200:  # Only set if window has loaded
+                    # Calculate proportions based on new weights: Equipment=10, Settings=40, Log=50
+                    # Total weight = 10 + 40 + 50 = 100
+                    # Equipment: 10/100 = 10% (fixed size)
+                    # Settings: 40/100 = 40% (bigger)
+                    # Log: 50/100 = 50% (smaller than before)
+                    
+                    # Set Equipment pane to 10% of total width (fixed size)
+                    equipment_width = int(total_width * 0.10)
+                    # Set Log pane to 50% of total width (smaller)
+                    log_width = int(total_width * 0.50)
+                    # Settings pane will get the remaining 40%
+                    
+                    # Set the sash positions (borders between panes)
+                    self.paned_window.sashpos(0, equipment_width)
+                    self.paned_window.sashpos(1, total_width - log_width)
+                    
+            except Exception as e:
+                print(f"Error setting pane sizes: {e}")
+        
+        # Schedule setting pane sizes after the window is fully loaded
+        self.root.after(200, set_default_pane_sizes)
         
         # Command Line Frame (Row 0)
         cmd_frame = ttk.Frame(self.frame_log)
         cmd_frame.grid(row=0, column=0, sticky="EW", padx=5, pady=(5, 0))
-        cmd_frame.columnconfigure(0, weight=1)
+        cmd_frame.columnconfigure(0, weight=0)
+        cmd_frame.columnconfigure(1, weight=1)
+        cmd_frame.columnconfigure(2, weight=0)
         
         # Command Line Label and Entry
-        ttk.Label(cmd_frame, text="Command:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(cmd_frame, text="Command:").grid(row=0, column=0, sticky="W", padx=(0, 5))
         self.cmd_var = tk.StringVar()
         self.entry_cmd = ttk.Entry(cmd_frame, textvariable=self.cmd_var, font=("Consolas", 9))
-        self.entry_cmd.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.entry_cmd.grid(row=0, column=1, sticky="EW", padx=(0, 5))
         
         # Apply Command Button
         btn_apply_cmd = ttk.Button(cmd_frame, text="Apply", command=self.apply_custom_command, width=8)
-        btn_apply_cmd.pack(side=tk.RIGHT)
+        btn_apply_cmd.grid(row=0, column=2, sticky="E")
         
         # Log Text (Row 1)
         self.txt_log = scrolledtext.ScrolledText(
@@ -690,26 +830,11 @@ class ModpollingTool:
         # Combine both lists and remove duplicates
         combined_com_ports = sorted(list(set(com_ports_serial + com_ports_registry)))
 
-        # Try to fetch owner names from SQL and label as "COMx - OWNER"
-        try:
-            owner_map = self._load_com_port_owner_map()
-        except Exception:
-            owner_map = {}
-
-        enhanced_ports = []
-        for port in combined_com_ports:
-            normalized = self._normalize_com_port_name(str(port))
-            owner = owner_map.get(normalized)
-            if owner:
-                enhanced_ports.append(f"{normalized} - {owner}")
-            else:
-                enhanced_ports.append(normalized)
-
         # Update the combobox values
-        self.cmb_comport['values'] = enhanced_ports
+        self.cmb_comport['values'] = combined_com_ports
 
         # If there are available COM ports, select the first one
-        if enhanced_ports:
+        if combined_com_ports:
             self.cmb_comport.current(0)
         else:
             self.cmb_comport.set('')
@@ -766,76 +891,6 @@ class ModpollingTool:
                 return enhanced_name
         except Exception:
             return enhanced_name
-
-    def _normalize_com_port_name(self, port_candidate):
-        """Normalize various COM port representations to 'COM<number>' uppercase."""
-        try:
-            # If it's already in the form COM<number>
-            match = re.search(r'COM\d+', str(port_candidate).upper())
-            if match:
-                return match.group(0)
-            # If it's numeric, convert to COM<number>
-            digits = re.sub(r'[^0-9]', '', str(port_candidate))
-            if digits.isdigit() and digits:
-                return f"COM{int(digits)}"
-            return str(port_candidate).upper()
-        except Exception:
-            return str(port_candidate).upper()
-
-    def _load_com_port_owner_map(self):
-        """Query MySQL for COM port owners and return a dict { 'COM1': 'OWNER', ... }."""
-        # If mysql client missing, return empty map
-        if not os.path.exists(getattr(self, 'mysql_path', '')):
-            return {}
-
-        query = (
-            "SELECT com_port, owner FROM iw_sys_plant_settings "
-            "WHERE com_port IS NOT NULL AND com_port <> '' "
-            "AND owner IS NOT NULL AND owner <> '';"
-        )
-
-        cmd = [
-            self.mysql_path,
-            "--protocol=TCP",
-            "-u", self.mysql_user,
-            "-h", self.mysql_host,
-            "-D", self.mysql_db,
-            "-N", "-B",
-            "-e", query
-        ]
-
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        creationflags = subprocess.CREATE_NO_WINDOW
-
-        try:
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                startupinfo=startupinfo,
-                creationflags=creationflags,
-                shell=False,
-                timeout=5,
-            )
-            if result.returncode != 0:
-                return {}
-            stdout_text = result.stdout if isinstance(result.stdout, str) else (result.stdout.decode('utf-8', 'ignore') if result.stdout else "")
-            mapping = {}
-            for line in (stdout_text or "").splitlines():
-                if not line.strip():
-                    continue
-                parts = line.split('\t')
-                if len(parts) >= 2:
-                    port_raw = parts[0].strip()
-                    owner = parts[1].strip()
-                    norm = self._normalize_com_port_name(port_raw)
-                    if norm:
-                        mapping[norm] = owner
-            return mapping
-        except Exception:
-            return {}
 
     def format_com_port(self, com_port):
         try:
@@ -1170,6 +1225,8 @@ class ModpollingTool:
         update_interval = 10 if self.is_polling else 100
         self.root.after(update_interval, self.update_log)
 
+
+
     def on_closing(self):
         if self.is_polling:
             if messagebox.askokcancel("Exit", "Polling is running. Do you want to exit?"):
@@ -1376,6 +1433,141 @@ class ModpollingTool:
             self.custom_arguments = None
             self.log_queue.put(('info', "Custom command cleared, using default settings"))
 
+    def extract_ip_address(self, text):
+        """Extract IP address from text using regex pattern matching."""
+        if not text:
+            return ''
+        
+        import re
+        # Pattern to match IPv4 addresses
+        ip_pattern = r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'
+        
+        # Find the first IP address in the text
+        match = re.search(ip_pattern, text)
+        if match:
+            ip_address = match.group(0)
+            # Always hide 127.0.0.1 addresses (localhost)
+            if ip_address.startswith('127.0.0.1'):
+                return ''
+            return ip_address
+        return ''
+
+    def handle_get_units(self):
+        """Fetch units data from MySQL and populate the Units table."""
+        try:
+            if not os.path.exists(self.mysql_exe_path):
+                messagebox.showerror("MySQL Not Found", f"mysql.exe not found at {self.mysql_exe_path}")
+                return
+            
+            # Now I understand the relationship:
+            # owner in iw_sys_plant_settings matches driver_type in iw_sys_plant_units
+            # We need to look for COM port and IP address settings in the value field
+            # For IP address, we'll automatically detect any value that matches IPv4 pattern
+            # For COM port, we'll look for reception_port setting
+            
+            query = (
+                "SELECT u.unit_id, u.unit_name, u.driver_type, u.driver_addr, u.regulator_type, "
+                "COALESCE(com_port_setting.value, '') as com_port, "
+                "COALESCE(ip_setting.value, '') as ip_address "
+                "FROM iw_sys_plant_units u "
+                "LEFT JOIN iw_sys_plant_settings com_port_setting ON u.driver_type = com_port_setting.owner AND com_port_setting.setting = 'reception_port' "
+                "LEFT JOIN iw_sys_plant_settings ip_setting ON u.driver_type = ip_setting.owner AND "
+                "   (ip_setting.value REGEXP '^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$' OR "
+                "    ip_setting.value REGEXP 'https?://[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}' OR "
+                "    ip_setting.value REGEXP '[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}') "
+                "ORDER BY u.unit_id"
+            )
+            
+            cmd = [
+                self.mysql_exe_path,
+                "-h", "127.0.0.1",
+                "-u", "iwmac",
+                "-D", "iw_plant_server3",
+                "-N", "-B",
+                "-e", query,
+            ]
+            
+            def run_query():
+                try:
+                    # Prevent window popup
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    creationflags = subprocess.CREATE_NO_WINDOW
+                    
+                    result = subprocess.run(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        shell=False,
+                        startupinfo=startupinfo,
+                        creationflags=creationflags,
+                    )
+                    if result.returncode != 0:
+                        err = result.stderr.strip() or "Unknown MySQL error"
+                        self.log_queue.put(('error', f"MySQL query failed: {err}"))
+                        messagebox.showerror("MySQL Error", err)
+                        return
+                    
+                    rows = []
+                    for line in result.stdout.splitlines():
+                        if not line.strip():
+                            continue
+                        parts = line.split('\t')
+                        # Ensure we have exactly 7 columns (unit_id, unit_name, driver_type, driver_addr, regulator_type, com_port, ip_address)
+                        if len(parts) >= 7:
+                            # Extract only the IP address from the full value
+                            full_ip_value = parts[6]  # The full value from MySQL
+                            clean_ip_address = self.extract_ip_address(full_ip_value)
+                            
+                            # Reorder data to match new column order: unit_id, unit_name, driver_type, driver_addr, regulator_type, ip_address, com_port
+                            reordered_row = [
+                                parts[0],  # unit_id
+                                parts[1],  # unit_name
+                                parts[2],  # driver_type
+                                parts[3],  # driver_addr
+                                parts[4],  # regulator_type
+                                clean_ip_address,  # Clean IP address (only the IP, no extra text)
+                                parts[5]   # com_port
+                            ]
+                            rows.append(reordered_row)
+                        elif len(parts) >= 5:
+                            # If we only get 5 columns, add empty values for ip_address and com_port
+                            reordered_row = [
+                                parts[0],  # unit_id
+                                parts[1],  # unit_name
+                                parts[2],  # driver_type
+                                parts[3],  # driver_addr
+                                parts[4],  # regulator_type
+                                '',        # ip_address (empty)
+                                ''         # com_port (empty)
+                            ]
+                            rows.append(reordered_row)
+                    
+                    def update_table():
+                        # Clear existing
+                        for item in self.units_tree.get_children():
+                            self.units_tree.delete(item)
+                        # Insert new
+                        for r in rows:
+                            self.units_tree.insert('', 'end', values=r)
+                        
+                        # Auto-size columns to fit content after data is loaded
+                        self.root.after(100, self.auto_size_columns)
+                    
+                    self.root.after(0, update_table)
+                    self.log_queue.put(('info', f"Successfully loaded {len(rows)} units with COM port and IP address information!"))
+                    
+                except Exception as e:
+                    self.log_queue.put(('error', f"Error fetching units: {e}"))
+                    messagebox.showerror("Error", str(e))
+            
+            threading.Thread(target=run_query, daemon=True).start()
+            
+        except Exception as e:
+            self.log_queue.put(('error', f"Error starting units fetch: {e}"))
+            messagebox.showerror("Error", str(e))
+
     def toggle_equipment_pane(self):
         if not self.equipment_pane_visible:
             self.show_equipment_pane()
@@ -1450,92 +1642,6 @@ class ModpollingTool:
                 self.blink_job = None
 
     # ---------------- End of Status Indicator Methods ----------------
-
-
-    # ---------------- Units Tab Handlers ----------------
-    def on_get_units_data(self):
-        """Fetch units data from MySQL and populate the tree view (runs in background)."""
-        if not os.path.exists(self.mysql_path):
-            messagebox.showwarning("MySQL Client Not Found", f"mysql.exe not found at {self.mysql_path}")
-            return
-
-        # Disable button during fetch
-        try:
-            self.btn_get_units.config(state="disabled")
-        except Exception:
-            pass
-
-        threading.Thread(target=self._load_units_data_thread, daemon=True).start()
-
-    def _load_units_data_thread(self):
-        query = (
-            "SELECT unit_id, unit_name, driver_type, driver_addr, regulator_type "
-            "FROM iw_sys_plant_units;"
-        )
-        cmd = [
-            self.mysql_path,
-            "--protocol=TCP",
-            "-u", self.mysql_user,
-            "-h", self.mysql_host,
-            "-D", self.mysql_db,
-            "-N", "-B",
-            "-e", query
-        ]
-
-        try:
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            creationflags = subprocess.CREATE_NO_WINDOW
-
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                startupinfo=startupinfo,
-                creationflags=creationflags,
-                shell=False,
-                timeout=10,
-            )
-
-            stdout_text = result.stdout if isinstance(result.stdout, str) else (result.stdout.decode('utf-8', 'ignore') if result.stdout else "")
-            stderr_text = result.stderr if isinstance(result.stderr, str) else (result.stderr.decode('utf-8', 'ignore') if result.stderr else "")
-
-            if result.returncode != 0:
-                error_text = (stderr_text or "Unknown MySQL error").strip()
-                self.log_queue.put(('error', f"MySQL error: {error_text}"))
-                self.root.after(0, lambda: messagebox.showerror("MySQL Error", error_text))
-                return
-
-            lines = [line for line in (stdout_text or "").splitlines() if line.strip()]
-            rows = []
-            for line in lines:
-                fields = line.split('\t')
-                if len(fields) >= 5:
-                    rows.append(fields[:5])
-
-            self.root.after(0, lambda: self._populate_units_tree(rows))
-        except Exception as e:
-            self.log_queue.put(('error', f"Error fetching units: {e}"))
-            self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
-        finally:
-            self.root.after(0, lambda: self.btn_get_units.config(state="normal"))
-
-    def _populate_units_tree(self, rows):
-        # Clear existing
-        try:
-            for item in self.units_tree.get_children():
-                self.units_tree.delete(item)
-        except Exception:
-            pass
-
-        for row in rows:
-            try:
-                self.units_tree.insert("", tk.END, values=row)
-            except Exception:
-                continue
-
-        self.log_queue.put(('info', f"Loaded {len(rows)} units"))
 
 
 
