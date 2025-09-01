@@ -12,6 +12,7 @@ import re  # For regex matching
 import shlex  # For parsing command line arguments
 from tkinter import font as tkfont
 import datetime
+import urllib.request, urllib.error
 
 
 class ModpollingTool:
@@ -37,6 +38,11 @@ class ModpollingTool:
         
         # Default modpoll path
         self.modpoll_path = r"C:\iwmac\bin\modpoll.exe"
+        # MySQL client path and connection settings
+        self.mysql_path = r"C:\iwmac\mysql\bin\mysql.exe"
+        self.mysql_host = "127.0.0.1"
+        self.mysql_user = "iwmac"
+        self.mysql_db = "iw_plant_server3"
         
         # Ensure modpoll.exe exists, download if needed
         self.ensure_modpoll_exists()
@@ -384,6 +390,10 @@ class ModpollingTool:
         self.advanced_tab = ttk.Frame(self.settings_notebook)
         self.settings_notebook.add(self.advanced_tab, text="Advanced")
         
+        # Units Tab
+        self.units_tab = ttk.Frame(self.settings_notebook)
+        self.settings_notebook.add(self.units_tab, text="Units")
+        
 
 
         # ---------------- Basic Settings Widgets ----------------
@@ -487,6 +497,25 @@ class ModpollingTool:
         self.advanced_tab.columnconfigure(0, weight=1)
         self.advanced_tab.columnconfigure(1, weight=3)
 
+        # ---------------- Units Tab Widgets ----------------
+        self.units_tab.columnconfigure(0, weight=1)
+        self.units_tab.rowconfigure(1, weight=1)
+
+        self.btn_get_units = ttk.Button(self.units_tab, text="Get units data", command=self.on_get_units_data)
+        self.btn_get_units.grid(row=0, column=0, sticky="w", padx=5, pady=5)
+
+        columns = ("unit_id", "unit_name", "driver_type", "driver_addr", "regulator_type")
+        self.units_tree = ttk.Treeview(self.units_tab, columns=columns, show='headings', height=12)
+        for col in columns:
+            self.units_tree.heading(col, text=col, anchor="center")
+            self.units_tree.column(col, anchor="center", width=140)
+
+        scrollbar_units = ttk.Scrollbar(self.units_tab, orient=tk.VERTICAL, command=self.units_tree.yview)
+        self.units_tree.configure(yscrollcommand=scrollbar_units.set)
+        self.units_tree.grid(row=1, column=0, sticky="NSEW", padx=(5,0), pady=(0,5))
+        scrollbar_units.grid(row=1, column=1, sticky="NS", padx=(0,5), pady=(0,5))
+
+
 
 
         # ---------------- Polling Buttons and Status Indicator ----------------
@@ -508,7 +537,7 @@ class ModpollingTool:
         # Start Polling Button - Modern Green Style
         self.btn_start = tk.Button(
             btn_frame, 
-            text="▶ Start Polling", 
+            text="Start Polling",
             command=self.start_polling,
             font=("Segoe UI", 10, "bold"),
             bg="#10B981",  # Modern green
@@ -526,7 +555,7 @@ class ModpollingTool:
         # Stop Polling Button - Modern Red Style
         self.btn_stop = tk.Button(
             btn_frame, 
-            text="■ Stop Polling", 
+            text="Stop Polling", 
             command=self.stop_polling, 
             state="normal",
             font=("Segoe UI", 10, "bold"),
@@ -661,11 +690,26 @@ class ModpollingTool:
         # Combine both lists and remove duplicates
         combined_com_ports = sorted(list(set(com_ports_serial + com_ports_registry)))
 
+        # Try to fetch owner names from SQL and label as "COMx - OWNER"
+        try:
+            owner_map = self._load_com_port_owner_map()
+        except Exception:
+            owner_map = {}
+
+        enhanced_ports = []
+        for port in combined_com_ports:
+            normalized = self._normalize_com_port_name(str(port))
+            owner = owner_map.get(normalized)
+            if owner:
+                enhanced_ports.append(f"{normalized} - {owner}")
+            else:
+                enhanced_ports.append(normalized)
+
         # Update the combobox values
-        self.cmb_comport['values'] = combined_com_ports
+        self.cmb_comport['values'] = enhanced_ports
 
         # If there are available COM ports, select the first one
-        if combined_com_ports:
+        if enhanced_ports:
             self.cmb_comport.current(0)
         else:
             self.cmb_comport.set('')
@@ -722,6 +766,75 @@ class ModpollingTool:
                 return enhanced_name
         except Exception:
             return enhanced_name
+
+    def _normalize_com_port_name(self, port_candidate):
+        """Normalize various COM port representations to 'COM<number>' uppercase."""
+        try:
+            # If it's already in the form COM<number>
+            match = re.search(r'COM\d+', str(port_candidate).upper())
+            if match:
+                return match.group(0)
+            # If it's numeric, convert to COM<number>
+            digits = re.sub(r'[^0-9]', '', str(port_candidate))
+            if digits.isdigit() and digits:
+                return f"COM{int(digits)}"
+            return str(port_candidate).upper()
+        except Exception:
+            return str(port_candidate).upper()
+
+    def _load_com_port_owner_map(self):
+        """Query MySQL for COM port owners and return a dict { 'COM1': 'OWNER', ... }."""
+        # If mysql client missing, return empty map
+        if not os.path.exists(getattr(self, 'mysql_path', '')):
+            return {}
+
+        query = (
+            "SELECT com_port, owner FROM iw_sys_plant_settings "
+            "WHERE com_port IS NOT NULL AND com_port <> '' "
+            "AND owner IS NOT NULL AND owner <> '';"
+        )
+
+        cmd = [
+            self.mysql_path,
+            "--protocol=TCP",
+            "-u", self.mysql_user,
+            "-h", self.mysql_host,
+            "-D", self.mysql_db,
+            "-N", "-B",
+            "-e", query
+        ]
+
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        creationflags = subprocess.CREATE_NO_WINDOW
+
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
+                shell=False,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return {}
+            mapping = {}
+            for line in result.stdout.splitlines():
+                if not line.strip():
+                    continue
+                parts = line.split('\t')
+                if len(parts) >= 2:
+                    port_raw = parts[0].strip()
+                    owner = parts[1].strip()
+                    norm = self._normalize_com_port_name(port_raw)
+                    if norm:
+                        mapping[norm] = owner
+            return mapping
+        except Exception:
+            return {}
 
     def format_com_port(self, com_port):
         try:
@@ -1336,6 +1449,88 @@ class ModpollingTool:
                 self.blink_job = None
 
     # ---------------- End of Status Indicator Methods ----------------
+
+
+    # ---------------- Units Tab Handlers ----------------
+    def on_get_units_data(self):
+        """Fetch units data from MySQL and populate the tree view (runs in background)."""
+        if not os.path.exists(self.mysql_path):
+            messagebox.showwarning("MySQL Client Not Found", f"mysql.exe not found at {self.mysql_path}")
+            return
+
+        # Disable button during fetch
+        try:
+            self.btn_get_units.config(state="disabled")
+        except Exception:
+            pass
+
+        threading.Thread(target=self._load_units_data_thread, daemon=True).start()
+
+    def _load_units_data_thread(self):
+        query = (
+            "SELECT unit_id, unit_name, driver_type, driver_addr, regulator_type "
+            "FROM iw_sys_plant_units;"
+        )
+        cmd = [
+            self.mysql_path,
+            "--protocol=TCP",
+            "-u", self.mysql_user,
+            "-h", self.mysql_host,
+            "-D", self.mysql_db,
+            "-N", "-B",
+            "-e", query
+        ]
+
+        try:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            creationflags = subprocess.CREATE_NO_WINDOW
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
+                shell=False,
+            )
+
+            if result.returncode != 0:
+                error_text = result.stderr.strip() or "Unknown MySQL error"
+                self.log_queue.put(('error', f"MySQL error: {error_text}"))
+                self.root.after(0, lambda: messagebox.showerror("MySQL Error", error_text))
+                return
+
+            lines = [line for line in result.stdout.splitlines() if line.strip()]
+            rows = []
+            for line in lines:
+                fields = line.split('\t')
+                if len(fields) >= 5:
+                    rows.append(fields[:5])
+
+            self.root.after(0, lambda: self._populate_units_tree(rows))
+        except Exception as e:
+            self.log_queue.put(('error', f"Error fetching units: {e}"))
+            self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
+        finally:
+            self.root.after(0, lambda: self.btn_get_units.config(state="normal"))
+
+    def _populate_units_tree(self, rows):
+        # Clear existing
+        try:
+            for item in self.units_tree.get_children():
+                self.units_tree.delete(item)
+        except Exception:
+            pass
+
+        for row in rows:
+            try:
+                self.units_tree.insert("", tk.END, values=row)
+            except Exception:
+                continue
+
+        self.log_queue.put(('info', f"Loaded {len(rows)} units"))
 
 
 
