@@ -399,7 +399,7 @@ class ModpollingTool:
         # Advanced Tab
         self.advanced_tab = ttk.Frame(self.settings_notebook)
         self.settings_notebook.add(self.advanced_tab, text="Advanced")
-        
+
         # ---------------- Basic Settings Widgets ----------------
         # COM Port
         ttk.Label(self.basic_tab, text="COM Port:").grid(
@@ -498,7 +498,7 @@ class ModpollingTool:
         # Adjust column weights in Advanced Tab for better layout
         self.advanced_tab.columnconfigure(0, weight=1)
         self.advanced_tab.columnconfigure(1, weight=3)
-        
+
         # ---------------- Polling Buttons and Status Indicator ----------------
         # Polling Buttons and Status Indicator are placed in the same frame using grid
         btn_frame = ttk.Frame(self.frame_settings)
@@ -537,7 +537,7 @@ class ModpollingTool:
         self.btn_stop = tk.Button(
             btn_frame, 
             text="Stop Polling", 
-            command=self.stop_polling,
+            command=self.stop_polling, 
             state="normal",
             font=("Segoe UI", 10, "bold"),
             bg="#FCA5A5",  # Light red when disabled
@@ -703,7 +703,7 @@ class ModpollingTool:
         
         # Store the auto-size function for later use
         self.auto_size_columns = auto_size_columns
-        
+
         # ---------------- Log Frame (Column 2) ----------------
         self.frame_log = ttk.LabelFrame(self.paned_window, text="Log")
         self.paned_window.add(self.frame_log, weight=50)  # Smaller weight for Log
@@ -1463,21 +1463,28 @@ class ModpollingTool:
             # owner in iw_sys_plant_settings matches driver_type in iw_sys_plant_units
             # We need to look for COM port and IP address settings in the value field
             # For IP address, we'll automatically detect any value that matches IPv4 pattern
-            # For COM port, we'll look for reception_port setting
+            # For COM port, we'll look for comm_port setting
             
             query = (
                 "SELECT u.unit_id, u.unit_name, u.driver_type, u.driver_addr, u.regulator_type, "
                 "COALESCE(com_port_setting.value, '') as com_port, "
-                "COALESCE(ip_setting.value, '') as ip_address "
+                "COALESCE(REPLACE(REPLACE(ip_setting.value, CHAR(13), ''), CHAR(10), ''), '') as ip_address, "
+                "COALESCE(mb_mode_setting.value, '0') as mb_mode, "
+                "COALESCE(REPLACE(REPLACE(mb_tcp_servers_setting.value, CHAR(13), ''), CHAR(10), ''), '') as mb_tcp_servers "
                 "FROM iw_sys_plant_units u "
-                "LEFT JOIN iw_sys_plant_settings com_port_setting ON u.driver_type = com_port_setting.owner AND com_port_setting.setting = 'reception_port' "
+                "LEFT JOIN iw_sys_plant_settings com_port_setting ON u.driver_type = com_port_setting.owner AND com_port_setting.setting = 'comm_port' "
                 "LEFT JOIN iw_sys_plant_settings ip_setting ON u.driver_type = ip_setting.owner AND "
                 "   (ip_setting.value REGEXP '^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$' OR "
                 "    ip_setting.value REGEXP 'https?://[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}' OR "
                 "    ip_setting.value REGEXP '[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}') "
+                "LEFT JOIN iw_sys_plant_settings mb_mode_setting ON u.driver_type = mb_mode_setting.owner AND mb_mode_setting.setting = 'mb_mode' "
+                "LEFT JOIN iw_sys_plant_settings mb_tcp_servers_setting ON u.driver_type = mb_tcp_servers_setting.owner AND mb_tcp_servers_setting.setting = 'mb_tcp_servers' "
                 "ORDER BY u.unit_id"
             )
             
+
+            
+            # Try primary credentials first
             cmd = [
                 self.mysql_exe_path,
                 "-h", "127.0.0.1",
@@ -1487,7 +1494,7 @@ class ModpollingTool:
                 "-e", query,
             ]
             
-            def run_query():
+            def run_query_with_fallback():
                 try:
                     # Prevent window popup
                     startupinfo = subprocess.STARTUPINFO()
@@ -1503,6 +1510,11 @@ class ModpollingTool:
                         startupinfo=startupinfo,
                         creationflags=creationflags,
                     )
+                    
+                    # Check if result.stdout is None (which causes the 'splitlines' error)
+                    if result.stdout is None:
+                        raise Exception("Database connection failed - stdout is None")
+                    
                     if result.returncode != 0:
                         err = result.stderr.strip() or "Unknown MySQL error"
                         self.log_queue.put(('error', f"MySQL query failed: {err}"))
@@ -1514,11 +1526,32 @@ class ModpollingTool:
                         if not line.strip():
                             continue
                         parts = line.split('\t')
-                        # Ensure we have exactly 7 columns (unit_id, unit_name, driver_type, driver_addr, regulator_type, com_port, ip_address)
-                        if len(parts) >= 7:
+                        # Ensure we have exactly 9 columns (unit_id, unit_name, driver_type, driver_addr, regulator_type, com_port, ip_address, mb_mode, mb_tcp_servers)
+                        if len(parts) >= 9:
                             # Extract only the IP address from the full value
                             full_ip_value = parts[6]  # The full value from MySQL
                             clean_ip_address = self.extract_ip_address(full_ip_value)
+                            
+                            # Get COM port value, mb_mode, and mb_tcp_servers
+                            com_port_value = parts[5]  # The COM port from MySQL
+                            mb_mode = parts[7]  # The Modbus mode from MySQL
+                            mb_tcp_servers = parts[8]  # The mb_tcp_servers value from MySQL
+                            
+                            # (debug logs removed)
+                            
+                            # Handle TCP mode (mb_mode=2) - COM port should be blank, and extract IP from mb_tcp_servers if no IP from database
+                            if mb_mode == '2':
+                                com_port_value = ''  # Clear COM port for TCP mode
+                                
+                                # If no IP address found in regular IP field, try to extract from mb_tcp_servers
+                                if not clean_ip_address and mb_tcp_servers:
+                                    # mb_tcp_servers format: "0;192.168.10.100;502;1000;2;1000"
+                                    # Extract IP address from the second field (index 1)
+                                    tcp_parts = mb_tcp_servers.split(';')
+                                    if len(tcp_parts) >= 2:
+                                        tcp_ip = tcp_parts[1].strip()
+                                        if self.extract_ip_address(tcp_ip):
+                                            clean_ip_address = tcp_ip
                             
                             # Reorder data to match new column order: unit_id, unit_name, driver_type, driver_addr, regulator_type, ip_address, com_port
                             reordered_row = [
@@ -1528,8 +1561,9 @@ class ModpollingTool:
                                 parts[3],  # driver_addr
                                 parts[4],  # regulator_type
                                 clean_ip_address,  # Clean IP address (only the IP, no extra text)
-                                parts[5]   # com_port
+                                com_port_value   # com_port (blank for TCP mode)
                             ]
+                            # (debug log removed)
                             rows.append(reordered_row)
                         elif len(parts) >= 5:
                             # If we only get 5 columns, add empty values for ip_address and com_port
@@ -1559,10 +1593,120 @@ class ModpollingTool:
                     self.log_queue.put(('info', f"Successfully loaded {len(rows)} units with COM port and IP address information!"))
                     
                 except Exception as e:
-                    self.log_queue.put(('error', f"Error fetching units: {e}"))
-                    messagebox.showerror("Error", str(e))
+                    # If primary credentials fail, try fallback credentials
+                    if "stdout is None" in str(e) or "splitlines" in str(e):
+                        self.log_queue.put(('info', "Primary database connection failed, trying fallback credentials..."))
+                        try_fallback_credentials()
+                    else:
+                        self.log_queue.put(('error', f"Error fetching units: {e}"))
+                        messagebox.showerror("Error", str(e))
             
-            threading.Thread(target=run_query, daemon=True).start()
+            def try_fallback_credentials():
+                """Try connecting with fallback database credentials."""
+                try:
+                    fallback_cmd = [
+                        self.mysql_exe_path,
+                        "-h", "127.0.0.1",
+                        "-u", "SECRET",
+                        "-p", "EVENMORESECRET",
+                        "-D", "iw_plant_server3",
+                        "-N", "-B",
+                        "-e", query,
+                    ]
+                    
+                    self.log_queue.put(('info', "Attempting connection with fallback credentials..."))
+                    
+                    result = subprocess.run(
+                        fallback_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        shell=False,
+                        startupinfo=startupinfo,
+                        creationflags=creationflags,
+                    )
+                    
+                    if result.stdout is None:
+                        raise Exception("Fallback database connection also failed - stdout is None")
+                    
+                    if result.returncode != 0:
+                        err = result.stderr.strip() or "Unknown MySQL error"
+                        self.log_queue.put(('error', f"Fallback MySQL query failed: {err}"))
+                        return
+                    
+                    rows = []
+                    for line in result.stdout.splitlines():
+                        if not line.strip():
+                            continue
+                        parts = line.split('\t')
+                        # Ensure we have exactly 9 columns (unit_id, unit_name, driver_type, driver_addr, regulator_type, com_port, ip_address, mb_mode, mb_tcp_servers)
+                        if len(parts) >= 9:
+                            # Extract only the IP address from the full value
+                            full_ip_value = parts[6]  # The full value from MySQL
+                            clean_ip_address = self.extract_ip_address(full_ip_value)
+                            
+                            # Get COM port value, mb_mode, and mb_tcp_servers
+                            com_port_value = parts[5]  # The COM port from MySQL
+                            mb_mode = parts[7]  # The Modbus mode from MySQL
+                            mb_tcp_servers = parts[8]  # The mb_tcp_servers value from MySQL
+                            
+                            # Handle TCP mode (mb_mode=2) - COM port should be blank, and extract IP from mb_tcp_servers if no IP from database
+                            if mb_mode == '2':
+                                com_port_value = ''  # Clear COM port for TCP mode
+                                
+                                # If no IP address found in regular IP field, try to extract from mb_tcp_servers
+                                if not clean_ip_address and mb_tcp_servers:
+                                    # mb_tcp_servers format: "0;192.168.10.100;502;1000;2;1000"
+                                    # Extract IP address from the second field (index 1)
+                                    tcp_parts = mb_tcp_servers.split(';')
+                                    if len(tcp_parts) >= 2:
+                                        tcp_ip = tcp_parts[1].strip()
+                                        if self.extract_ip_address(tcp_ip):
+                                            clean_ip_address = tcp_ip
+                            
+                            # Reorder data to match new column order: unit_id, unit_name, driver_type, driver_addr, regulator_type, ip_address, com_port
+                            reordered_row = [
+                                parts[0],  # unit_id
+                                parts[1],  # unit_name
+                                parts[2],  # driver_type
+                                parts[3],  # driver_addr
+                                parts[4],  # regulator_type
+                                clean_ip_address,  # Clean IP address (only the IP, no extra text)
+                                com_port_value   # com_port
+                            ]
+                            rows.append(reordered_row)
+                        elif len(parts) >= 5:
+                            # If we only get 5 columns, add empty values for ip_address and com_port
+                            reordered_row = [
+                                parts[0],  # unit_id
+                                parts[1],  # unit_name
+                                parts[2],  # driver_type
+                                parts[3],  # driver_addr
+                                parts[4],  # regulator_type
+                                '',        # ip_address (empty)
+                                ''         # com_port (empty)
+                            ]
+                            rows.append(reordered_row)
+                    
+                    def update_table():
+                        # Clear existing
+                        for item in self.units_tree.get_children():
+                            self.units_tree.delete(item)
+                        # Insert new
+                        for r in rows:
+                            self.units_tree.insert('', 'end', values=r)
+                        
+                        # Auto-size columns to fit content after data is loaded
+                        self.root.after(100, self.auto_size_columns)
+                    
+                    self.root.after(0, update_table)
+                    self.log_queue.put(('info', f"Successfully loaded {len(rows)} units using fallback credentials!"))
+                    
+                except Exception as e:
+                    self.log_queue.put(('error', f"Fallback database connection also failed: {e}"))
+                    messagebox.showerror("Database Error", f"Both primary and fallback database connections failed:\n{str(e)}")
+            
+            threading.Thread(target=run_query_with_fallback, daemon=True).start()
             
         except Exception as e:
             self.log_queue.put(('error', f"Error starting units fetch: {e}"))
@@ -1642,6 +1786,8 @@ class ModpollingTool:
                 self.blink_job = None
 
     # ---------------- End of Status Indicator Methods ----------------
+
+
 
 
 
