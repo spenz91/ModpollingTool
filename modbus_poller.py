@@ -821,8 +821,9 @@ class ModpollingTool:
             )
             if result.returncode != 0:
                 return {}
+            stdout_text = result.stdout if isinstance(result.stdout, str) else (result.stdout.decode('utf-8', 'ignore') if result.stdout else "")
             mapping = {}
-            for line in result.stdout.splitlines():
+            for line in (stdout_text or "").splitlines():
                 if not line.strip():
                     continue
                 parts = line.split('\t')
@@ -1494,15 +1495,19 @@ class ModpollingTool:
                 startupinfo=startupinfo,
                 creationflags=creationflags,
                 shell=False,
+                timeout=10,
             )
 
+            stdout_text = result.stdout if isinstance(result.stdout, str) else (result.stdout.decode('utf-8', 'ignore') if result.stdout else "")
+            stderr_text = result.stderr if isinstance(result.stderr, str) else (result.stderr.decode('utf-8', 'ignore') if result.stderr else "")
+
             if result.returncode != 0:
-                error_text = result.stderr.strip() or "Unknown MySQL error"
+                error_text = (stderr_text or "Unknown MySQL error").strip()
                 self.log_queue.put(('error', f"MySQL error: {error_text}"))
                 self.root.after(0, lambda: messagebox.showerror("MySQL Error", error_text))
                 return
 
-            lines = [line for line in result.stdout.splitlines() if line.strip()]
+            lines = [line for line in (stdout_text or "").splitlines() if line.strip()]
             rows = []
             for line in lines:
                 fields = line.split('\t')
