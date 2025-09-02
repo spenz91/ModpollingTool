@@ -1521,7 +1521,8 @@ class ModpollingTool:
                         messagebox.showerror("MySQL Error", err)
                         return
                     
-                    rows = []
+                    # Build rows using a map to deduplicate by unit_id and prefer entries with IP
+                    rows_map = {}
                     for line in result.stdout.splitlines():
                         if not line.strip():
                             continue
@@ -1563,10 +1564,27 @@ class ModpollingTool:
                                 clean_ip_address,  # Clean IP address (only the IP, no extra text)
                                 com_port_value   # com_port (blank for TCP mode)
                             ]
-                            # (debug log removed)
-                            rows.append(reordered_row)
+
+                            # Filter AK2: only keep entries that have an IP address
+                            unit_id = parts[0]
+                            driver_type = parts[2]
+                            if driver_type == 'AK2' and not clean_ip_address:
+                                continue
+
+                            # Deduplicate by unit_id, prefer rows that have an IP address
+                            existing = rows_map.get(unit_id)
+                            if existing is None:
+                                rows_map[unit_id] = reordered_row
+                            else:
+                                existing_ip = existing[5]
+                                if not existing_ip and clean_ip_address:
+                                    rows_map[unit_id] = reordered_row
                         elif len(parts) >= 5:
                             # If we only get 5 columns, add empty values for ip_address and com_port
+                            # Skip AK2 entries without IP to avoid duplicates for AK2
+                            if len(parts) >= 3 and parts[2] == 'AK2':
+                                continue
+
                             reordered_row = [
                                 parts[0],  # unit_id
                                 parts[1],  # unit_name
@@ -1576,7 +1594,13 @@ class ModpollingTool:
                                 '',        # ip_address (empty)
                                 ''         # com_port (empty)
                             ]
-                            rows.append(reordered_row)
+
+                            # Only add if not already present
+                            unit_id = parts[0]
+                            if unit_id not in rows_map:
+                                rows_map[unit_id] = reordered_row
+
+                    rows = list(rows_map.values())
                     
                     def update_table():
                         # Clear existing
@@ -1604,6 +1628,11 @@ class ModpollingTool:
             def try_fallback_credentials():
                 """Try connecting with fallback database credentials."""
                 try:
+                    # Prevent window popup
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    creationflags = subprocess.CREATE_NO_WINDOW
+
                     fallback_cmd = [
                         self.mysql_exe_path,
                         "-h", "127.0.0.1",
@@ -1634,7 +1663,8 @@ class ModpollingTool:
                         self.log_queue.put(('error', f"Fallback MySQL query failed: {err}"))
                         return
                     
-                    rows = []
+                    # Build rows using a map to deduplicate by unit_id and prefer entries with IP
+                    rows_map = {}
                     for line in result.stdout.splitlines():
                         if not line.strip():
                             continue
@@ -1674,9 +1704,27 @@ class ModpollingTool:
                                 clean_ip_address,  # Clean IP address (only the IP, no extra text)
                                 com_port_value   # com_port
                             ]
-                            rows.append(reordered_row)
+
+                            # Filter AK2: only keep entries that have an IP address
+                            unit_id = parts[0]
+                            driver_type = parts[2]
+                            if driver_type == 'AK2' and not clean_ip_address:
+                                continue
+
+                            # Deduplicate by unit_id, prefer rows with an IP address
+                            existing = rows_map.get(unit_id)
+                            if existing is None:
+                                rows_map[unit_id] = reordered_row
+                            else:
+                                existing_ip = existing[5]
+                                if not existing_ip and clean_ip_address:
+                                    rows_map[unit_id] = reordered_row
                         elif len(parts) >= 5:
                             # If we only get 5 columns, add empty values for ip_address and com_port
+                            # Skip AK2 entries without IP to avoid duplicates for AK2
+                            if len(parts) >= 3 and parts[2] == 'AK2':
+                                continue
+
                             reordered_row = [
                                 parts[0],  # unit_id
                                 parts[1],  # unit_name
@@ -1686,7 +1734,12 @@ class ModpollingTool:
                                 '',        # ip_address (empty)
                                 ''         # com_port (empty)
                             ]
-                            rows.append(reordered_row)
+
+                            unit_id = parts[0]
+                            if unit_id not in rows_map:
+                                rows_map[unit_id] = reordered_row
+
+                    rows = list(rows_map.values())
                     
                     def update_table():
                         # Clear existing
