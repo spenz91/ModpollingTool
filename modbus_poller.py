@@ -518,6 +518,8 @@ class ModpollingTool:
         
         # Store custom command arguments
         self.custom_arguments = None
+        # Track if command entry has been manually edited by the user
+        self.cmd_dirty = False
 
         # Create modern button styles
         self.create_modern_button_styles()
@@ -775,10 +777,10 @@ class ModpollingTool:
         self.cmd_var = tk.StringVar()
         self.entry_cmd = ttk.Entry(cmd_frame, textvariable=self.cmd_var, font=("Consolas", 9))
         self.entry_cmd.grid(row=0, column=1, sticky="EW", padx=(0, 5))
+        # Mark command as dirty when user types
+        self.entry_cmd.bind('<KeyRelease>', self.on_cmd_entry_changed)
         
-        # Apply Command Button
-        btn_apply_cmd = ttk.Button(cmd_frame, text="Apply", command=self.apply_custom_command, width=8)
-        btn_apply_cmd.grid(row=0, column=2, sticky="E")
+        # (Apply button removed; Start Polling now uses edited command directly)
         
         # Log Text (Row 1)
         self.txt_log = scrolledtext.ScrolledText(
@@ -973,32 +975,45 @@ class ModpollingTool:
             messagebox.showwarning("Invalid Input", "Please enter valid numeric values.")
             return
 
-        # Use custom arguments if available, otherwise build default arguments
+        # Determine arguments priority: user-edited command > saved custom > generated
+        arguments = None
         if self.custom_arguments:
             arguments = self.custom_arguments
             self.log_queue.put(('info', f"Using custom command arguments: {' '.join(arguments)}"))
         else:
-            # Build command arguments using the same method as equipment selection
-            self.build_and_display_command()
-            # Get the command from the display
-            cmd_text = self.cmd_var.get().strip()
-            if cmd_text:
-                arguments = cmd_text.split()
-            else:
-                # Fallback to building arguments directly
-                if use_tcp:
-                    arguments = ["-m", "tcp", modbus_tcp] + [
-                        f"-b{baudrate}",
-                        f"-p{parity}",
-                        f"-d{databits}",
-                        f"-s{stopbits}",
-                        f"-a{adresse}",
-                        f"-r{start_reference}",
-                        f"-c{num_registers}",
-                        f"-t{register_data_type}",
-                    ]
-                else:
-                    arguments = [self.format_com_port(com_port), f"-b{baudrate}", f"-p{parity}", f"-a{adresse}"]
+            cmd_text_current = self.cmd_var.get().strip()
+            if self.cmd_dirty and cmd_text_current:
+                try:
+                    arguments = shlex.split(cmd_text_current)
+                    self.log_queue.put(('info', f"Using edited command: {cmd_text_current}"))
+                except Exception as e:
+                    self.log_queue.put(('error', f"Invalid command format: {e}"))
+                    arguments = None
+            if arguments is None:
+                # Build command arguments using the same method as equipment selection (will clear dirty)
+                self.build_and_display_command()
+                cmd_text = self.cmd_var.get().strip()
+                if cmd_text:
+                    try:
+                        arguments = shlex.split(cmd_text)
+                    except Exception as e:
+                        self.log_queue.put(('error', f"Invalid command format: {e}"))
+                        arguments = None
+                if not arguments:
+                    # Fallback to building arguments directly
+                    if use_tcp:
+                        arguments = ["-m", "tcp", modbus_tcp] + [
+                            f"-b{baudrate}",
+                            f"-p{parity}",
+                            f"-d{databits}",
+                            f"-s{stopbits}",
+                            f"-a{adresse}",
+                            f"-r{start_reference}",
+                            f"-c{num_registers}",
+                            f"-t{register_data_type}",
+                        ]
+                    else:
+                        arguments = [self.format_com_port(com_port), f"-b{baudrate}", f"-p{parity}", f"-a{adresse}"]
 
         # Reset attempt counter for a new polling session and store first reference
         self.poll_attempt_counter = 0
@@ -1478,6 +1493,12 @@ class ModpollingTool:
         
         # Update command line display
         self.cmd_var.set(' '.join(arguments))
+        # Programmatic update: not dirty
+        self.cmd_dirty = False
+
+    def on_cmd_entry_changed(self, event=None):
+        """Mark the command entry as edited by the user."""
+        self.cmd_dirty = True
 
     def on_units_selection_from_table(self, event=None):
         """When selecting a unit in the Units table, fill COM/baudrate/parity/address and update command."""
