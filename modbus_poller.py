@@ -42,6 +42,10 @@ class ModpollingTool:
         self.is_polling = False
         self.log_queue = queue.Queue()
         
+        # Units data and filter state
+        self.units_rows = []
+        self.hide_no_baudrate = False
+        
         # Default modpoll path
         self.modpoll_path = r"C:\iwmac\bin\modpoll.exe"
         # Default MySQL client path
@@ -593,6 +597,15 @@ class ModpollingTool:
         self.btn_get_units = ttk.Button(units_controls, text="Get units data", command=self.handle_get_units)
         self.btn_get_units.pack(side=tk.LEFT)
         
+        # Toggle button to hide/show units without baudrate
+        self.btn_toggle_baud_filter = ttk.Button(
+            units_controls,
+            text="Modbus-supported units",
+            command=self.toggle_hide_no_baudrate,
+            width=24,
+        )
+        self.btn_toggle_baud_filter.pack(side=tk.LEFT, padx=(8, 0))
+        
         # Table (Treeview) with scrollbar (row 1)
         units_table_frame = ttk.Frame(self.units_tab)
         units_table_frame.grid(row=1, column=0, sticky="NSEW", padx=5, pady=5)
@@ -669,6 +682,8 @@ class ModpollingTool:
                     self.units_tree.column(col, width=final_width)
         
         self.units_tree.bind("<Configure>", on_treeview_resize)
+        # Fill command inputs when selecting a unit row
+        self.units_tree.bind('<<TreeviewSelect>>', self.on_units_selection_from_table)
         
         # Function to auto-size columns to fit content exactly
         def auto_size_columns():
@@ -1329,6 +1344,47 @@ class ModpollingTool:
         self.search_var.set("")
         self.filter_equipment()
 
+    # ---------------- Units Table Helpers ----------------
+    def toggle_hide_no_baudrate(self):
+        """Toggle filter to hide/show units without baudrate and refresh table."""
+        self.hide_no_baudrate = not self.hide_no_baudrate
+        if self.hide_no_baudrate:
+            self.btn_toggle_baud_filter.config(text="Show all units")
+        else:
+            self.btn_toggle_baud_filter.config(text="Modbus-supported units")
+        self.refresh_units_table()
+
+    def set_units_rows(self, rows):
+        """Store rows and refresh table with current filter."""
+        try:
+            self.units_rows = rows or []
+        except Exception:
+            self.units_rows = []
+        self.refresh_units_table()
+
+    def refresh_units_table(self):
+        """Rebuild the Units table from stored rows, applying current filters."""
+        try:
+            # Determine filtered view
+            if self.hide_no_baudrate:
+                filtered = [r for r in (self.units_rows or []) if len(r) > 7 and str(r[7]).strip()]
+            else:
+                filtered = list(self.units_rows or [])
+
+            # Clear existing
+            for item in self.units_tree.get_children():
+                self.units_tree.delete(item)
+
+            # Insert filtered
+            for r in filtered:
+                self.units_tree.insert('', 'end', values=r)
+
+            # Auto-size columns after data load
+            self.root.after(100, self.auto_size_columns)
+        except Exception:
+            # Non-fatal UI update error; ignore
+            pass
+
     def select_first_equipment(self, event=None):
         """Select the first equipment in the filtered list"""
         if self.listbox_equipment.size() > 0:
@@ -1422,6 +1478,56 @@ class ModpollingTool:
         
         # Update command line display
         self.cmd_var.set(' '.join(arguments))
+
+    def on_units_selection_from_table(self, event=None):
+        """When selecting a unit in the Units table, fill COM/baudrate/parity/address and update command."""
+        try:
+            selection = self.units_tree.selection()
+            if not selection:
+                return
+            item_id = selection[0]
+            values = self.units_tree.item(item_id, 'values')
+            if not values or len(values) < 6:
+                return
+            # Columns: unit_id(0), unit_name(1), driver_type(2), driver_addr(3), regulator_type(4), ip_address(5), com_port(6), baudrate(7), parity(8)
+            driver_addr = values[3] if len(values) > 3 else ''
+            com_port = values[6] if len(values) > 6 else ''
+            baudrate = values[7] if len(values) > 7 else ''
+            parity = values[8] if len(values) > 8 else ''
+
+            # Extract numeric address: prefer part after '_' in patterns like '1_93'
+            address = ''
+            if driver_addr:
+                parts = str(driver_addr).split('_')
+                if len(parts) == 2 and parts[1].isdigit():
+                    address = parts[1]
+                elif str(driver_addr).isdigit():
+                    address = str(driver_addr)
+                else:
+                    import re as _re
+                    m = _re.search(r"(\d+)$", str(driver_addr))
+                    if m:
+                        address = m.group(1)
+
+            # Apply into UI fields if present
+            if com_port:
+                self.cmb_comport.set(com_port)
+            if baudrate:
+                self.cmb_baudrate.set(baudrate)
+            if parity and parity in ("none", "even", "odd"):
+                self.cmb_parity.set(parity)
+            if address:
+                self.entry_slave_address.delete(0, tk.END)
+                self.entry_slave_address.insert(0, address)
+
+            # Clear custom arguments and rebuild command preview
+            self.custom_arguments = None
+            self.build_and_display_command()
+
+            # Stay on Units tab; do not switch tabs
+        except Exception as _e:
+            # Best-effort; do not interrupt UI for minor errors
+            pass
 
     def apply_custom_command(self):
         """Apply custom command from the command line entry"""
@@ -1632,16 +1738,10 @@ class ModpollingTool:
                         return
                     
                     def update_table():
-                        # Clear existing
-                        for item in self.units_tree.get_children():
-                            self.units_tree.delete(item)
-                        # Insert new
-                        for r in rows:
-                            self.units_tree.insert('', 'end', values=r)
-                        
-                        # Auto-size columns to fit content after data is loaded
-                        self.root.after(100, self.auto_size_columns)
-                    
+                        # Enable Modbus-supported units filter by default on fetch
+                        self.hide_no_baudrate = True
+                        self.btn_toggle_baud_filter.config(text="Show all units")
+                        self.set_units_rows(rows)
                     self.root.after(0, update_table)
                     self.log_queue.put(('info', f"Successfully loaded {len(rows)} units with COM port and IP address information!"))
                     
@@ -1759,16 +1859,10 @@ class ModpollingTool:
                         self.log_queue.put(('info', f"Parsed {len(rows)} rows from MySQL (root/blank)."))
                     
                     def update_table():
-                        # Clear existing
-                        for item in self.units_tree.get_children():
-                            self.units_tree.delete(item)
-                        # Insert new
-                        for r in rows:
-                            self.units_tree.insert('', 'end', values=r)
-                        
-                        # Auto-size columns to fit content after data is loaded
-                        self.root.after(100, self.auto_size_columns)
-                    
+                        # Enable Modbus-supported units filter by default on fetch
+                        self.hide_no_baudrate = True
+                        self.btn_toggle_baud_filter.config(text="Show all units")
+                        self.set_units_rows(rows)
                     self.root.after(0, update_table)
                     self.log_queue.put(('info', f"Successfully loaded {len(rows)} units with COM port and IP address information!"))
                     
