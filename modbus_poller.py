@@ -137,6 +137,9 @@ class ModpollingTool:
         # For numbering specific log messages
         self.message_counts = {}
         
+        # Debug toggle for MySQL fetch logs
+        self.debug_mysql_logs = False
+        
         # Poll attempt tracking
         self.poll_attempt_counter = 0
         self.current_start_reference = None
@@ -600,7 +603,7 @@ class ModpollingTool:
         units_table_frame.rowconfigure(0, weight=1)
         units_table_frame.columnconfigure(0, weight=1)
         
-        columns = ("unit_id", "unit_name", "driver_type", "driver_addr", "regulator_type", "ip_address", "com_port")
+        columns = ("unit_id", "unit_name", "driver_type", "driver_addr", "regulator_type", "ip_address", "com_port", "baudrate", "parity")
         self.units_tree = ttk.Treeview(units_table_frame, columns=columns, show="headings")
         # Define user-friendly column headers
         column_headers = {
@@ -610,7 +613,9 @@ class ModpollingTool:
             "driver_addr": "Driver Address",
             "regulator_type": "Regulator Type",
             "ip_address": "IP Address",
-            "com_port": "COM Port"
+            "com_port": "COM Port",
+            "baudrate": "Baudrate",
+            "parity": "Parity"
         }
         
         # Set column widths - make them very wide to ensure ALL text is visible with no cutoff
@@ -621,13 +626,15 @@ class ModpollingTool:
             "driver_addr": 250,
             "regulator_type": 300,
             "ip_address": 800,  # IP Address column (now before COM Port)
-            "com_port": 200     # COM Port column (now after IP Address)
+            "com_port": 200,    # COM Port column (now after IP Address)
+            "baudrate": 160,
+            "parity": 140
         }
         
         for col in columns:
-            self.units_tree.heading(col, text=column_headers.get(col, col))
-            # Set columns to auto-size to content with minimum width
-            self.units_tree.column(col, anchor="w", minwidth=100, stretch=True)
+            self.units_tree.heading(col, text=column_headers.get(col, col), anchor="center")
+            # Set columns to auto-size to content with minimum width and center alignment
+            self.units_tree.column(col, anchor="center", minwidth=100, stretch=True)
         
         # Create scrollbars - both vertical and horizontal
         units_v_scrollbar = ttk.Scrollbar(units_table_frame, orient="vertical", command=self.units_tree.yview)
@@ -1452,6 +1459,30 @@ class ModpollingTool:
             return ip_address
         return ''
 
+    def normalize_parity_value(self, value):
+        """Normalize various parity encodings to user-friendly names (none/even/odd)."""
+        try:
+            s = (value or '').strip()
+        except Exception:
+            s = ''
+        lower = s.lower()
+        # Numeric mappings commonly used: 0=none, 1=odd, 2=even
+        if lower in ('0', 'none'):
+            return 'none'
+        if lower in ('1', 'odd'):
+            return 'odd'
+        if lower in ('2', 'even'):
+            return 'even'
+        # Letter shorthands
+        if lower in ('n',):
+            return 'none'
+        if lower in ('e',):
+            return 'even'
+        if lower in ('o',):
+            return 'odd'
+        # Default: return original trimmed value
+        return s
+
     def handle_get_units(self):
         """Fetch units data from MySQL and populate the Units table."""
         try:
@@ -1470,7 +1501,9 @@ class ModpollingTool:
                 "COALESCE(com_port_setting.value, '') as com_port, "
                 "COALESCE(REPLACE(REPLACE(ip_setting.value, CHAR(13), ''), CHAR(10), ''), '') as ip_address, "
                 "COALESCE(mb_mode_setting.value, '0') as mb_mode, "
-                "COALESCE(REPLACE(REPLACE(mb_tcp_servers_setting.value, CHAR(13), ''), CHAR(10), ''), '') as mb_tcp_servers "
+                "COALESCE(REPLACE(REPLACE(mb_tcp_servers_setting.value, CHAR(13), ''), CHAR(10), ''), '') as mb_tcp_servers, "
+                "COALESCE(baudrate_setting.value, '') as baudrate, "
+                "COALESCE(parity_setting.value, '') as parity "
                 "FROM iw_sys_plant_units u "
                 "LEFT JOIN iw_sys_plant_settings com_port_setting ON u.driver_type = com_port_setting.owner AND com_port_setting.setting = 'comm_port' "
                 "LEFT JOIN iw_sys_plant_settings ip_setting ON u.driver_type = ip_setting.owner AND "
@@ -1479,18 +1512,24 @@ class ModpollingTool:
                 "    ip_setting.value REGEXP '[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}') "
                 "LEFT JOIN iw_sys_plant_settings mb_mode_setting ON u.driver_type = mb_mode_setting.owner AND mb_mode_setting.setting = 'mb_mode' "
                 "LEFT JOIN iw_sys_plant_settings mb_tcp_servers_setting ON u.driver_type = mb_tcp_servers_setting.owner AND mb_tcp_servers_setting.setting = 'mb_tcp_servers' "
+                "LEFT JOIN iw_sys_plant_settings baudrate_setting ON u.driver_type = baudrate_setting.owner AND baudrate_setting.setting = 'comm_baudrate' "
+                "LEFT JOIN iw_sys_plant_settings parity_setting ON u.driver_type = parity_setting.owner AND parity_setting.setting = 'comm_parity' "
                 "ORDER BY u.unit_id"
             )
             
 
             
-            # Try primary credentials first
+            # Try primary credentials first (iwmac with blank password)
             cmd = [
                 self.mysql_exe_path,
                 "-h", "127.0.0.1",
                 "-u", "iwmac",
+                "--password=",
                 "-D", "iw_plant_server3",
                 "-N", "-B",
+                "--protocol=tcp",
+                "--default-character-set=utf8mb4",
+                "--connect-timeout=5",
                 "-e", query,
             ]
             
@@ -1506,101 +1545,91 @@ class ModpollingTool:
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
+                        encoding='utf-8',
+                        errors='replace',
                         shell=False,
                         startupinfo=startupinfo,
                         creationflags=creationflags,
                     )
                     
-                    # Check if result.stdout is None (which causes the 'splitlines' error)
-                    if result.stdout is None:
-                        raise Exception("Database connection failed - stdout is None")
-                    
                     if result.returncode != 0:
                         err = result.stderr.strip() or "Unknown MySQL error"
-                        self.log_queue.put(('error', f"MySQL query failed: {err}"))
-                        messagebox.showerror("MySQL Error", err)
+                        self.log_queue.put(('info', f"Primary MySQL query failed (iwmac/blank): rc={result.returncode}, stderr='{err}'. Trying fallback credentials..."))
+                        try_fallback_credentials()
                         return
                     
+                    # Debug: count raw lines
+                    raw_output = result.stdout or ''
+                    raw_lines = raw_output.splitlines()
+                    if self.debug_mysql_logs:
+                        self.log_queue.put(('info', f"MySQL returned {len(raw_lines)} raw lines (iwmac/blank). Parsing... (stdout {len(raw_output)} bytes, stderr {len((result.stderr or '').strip())} bytes)"))
+
                     # Build rows using a map to deduplicate by unit_id and prefer entries with IP
                     rows_map = {}
-                    for line in result.stdout.splitlines():
+                    for line in raw_lines:
                         if not line.strip():
                             continue
                         parts = line.split('\t')
-                        # Ensure we have exactly 9 columns (unit_id, unit_name, driver_type, driver_addr, regulator_type, com_port, ip_address, mb_mode, mb_tcp_servers)
-                        if len(parts) >= 9:
-                            # Extract only the IP address from the full value
-                            full_ip_value = parts[6]  # The full value from MySQL
-                            clean_ip_address = self.extract_ip_address(full_ip_value)
-                            
-                            # Get COM port value, mb_mode, and mb_tcp_servers
-                            com_port_value = parts[5]  # The COM port from MySQL
-                            mb_mode = parts[7]  # The Modbus mode from MySQL
-                            mb_tcp_servers = parts[8]  # The mb_tcp_servers value from MySQL
-                            
-                            # (debug logs removed)
-                            
-                            # Handle TCP mode (mb_mode=2) - COM port should be blank, and extract IP from mb_tcp_servers if no IP from database
-                            if mb_mode == '2':
-                                com_port_value = ''  # Clear COM port for TCP mode
-                                
-                                # If no IP address found in regular IP field, try to extract from mb_tcp_servers
-                                if not clean_ip_address and mb_tcp_servers:
-                                    # mb_tcp_servers format: "0;192.168.10.100;502;1000;2;1000"
-                                    # Extract IP address from the second field (index 1)
-                                    tcp_parts = mb_tcp_servers.split(';')
-                                    if len(tcp_parts) >= 2:
-                                        tcp_ip = tcp_parts[1].strip()
-                                        if self.extract_ip_address(tcp_ip):
-                                            clean_ip_address = tcp_ip
-                            
-                            # Reorder data to match new column order: unit_id, unit_name, driver_type, driver_addr, regulator_type, ip_address, com_port
-                            reordered_row = [
-                                parts[0],  # unit_id
-                                parts[1],  # unit_name
-                                parts[2],  # driver_type
-                                parts[3],  # driver_addr
-                                parts[4],  # regulator_type
-                                clean_ip_address,  # Clean IP address (only the IP, no extra text)
-                                com_port_value   # com_port (blank for TCP mode)
-                            ]
 
-                            # Filter AK2: only keep entries that have an IP address
-                            unit_id = parts[0]
-                            driver_type = parts[2]
-                            if driver_type == 'AK2' and not clean_ip_address:
-                                continue
+                        # Safely unpack with defaults for optional columns
+                        unit_id = parts[0] if len(parts) > 0 else ''
+                        unit_name = parts[1] if len(parts) > 1 else ''
+                        driver_type = parts[2] if len(parts) > 2 else ''
+                        driver_addr = parts[3] if len(parts) > 3 else ''
+                        regulator_type = parts[4] if len(parts) > 4 else ''
+                        com_port_value = parts[5] if len(parts) > 5 else ''
+                        full_ip_value = parts[6] if len(parts) > 6 else ''
+                        mb_mode = parts[7] if len(parts) > 7 else '0'
+                        mb_tcp_servers = parts[8] if len(parts) > 8 else ''
+                        baudrate_value = parts[9] if len(parts) > 9 else ''
+                        parity_value_raw = parts[10] if len(parts) > 10 else ''
+                        parity_value = self.normalize_parity_value(parity_value_raw)
 
-                            # Deduplicate by unit_id, prefer rows that have an IP address
-                            existing = rows_map.get(unit_id)
-                            if existing is None:
-                                rows_map[unit_id] = reordered_row
-                            else:
-                                existing_ip = existing[5]
-                                if not existing_ip and clean_ip_address:
-                                    rows_map[unit_id] = reordered_row
-                        elif len(parts) >= 5:
-                            # If we only get 5 columns, add empty values for ip_address and com_port
-                            # Skip AK2 entries without IP to avoid duplicates for AK2
-                            if len(parts) >= 3 and parts[2] == 'AK2':
-                                continue
+                        clean_ip_address = self.extract_ip_address(full_ip_value)
 
-                            reordered_row = [
-                                parts[0],  # unit_id
-                                parts[1],  # unit_name
-                                parts[2],  # driver_type
-                                parts[3],  # driver_addr
-                                parts[4],  # regulator_type
-                                '',        # ip_address (empty)
-                                ''         # com_port (empty)
-                            ]
+                        # Handle TCP mode (mb_mode=2): clear COM and, if needed, extract IP from mb_tcp_servers
+                        if mb_mode == '2':
+                            com_port_value = ''
+                            if not clean_ip_address and mb_tcp_servers:
+                                tcp_parts = mb_tcp_servers.split(';')
+                                if len(tcp_parts) >= 2:
+                                    tcp_ip = tcp_parts[1].strip()
+                                    if self.extract_ip_address(tcp_ip):
+                                        clean_ip_address = tcp_ip
 
-                            # Only add if not already present
-                            unit_id = parts[0]
-                            if unit_id not in rows_map:
+                        # Skip AK2 entries without IP address
+                        if driver_type == 'AK2' and not clean_ip_address:
+                            continue
+
+                        reordered_row = [
+                            unit_id,
+                            unit_name,
+                            driver_type,
+                            driver_addr,
+                            regulator_type,
+                            clean_ip_address,
+                            com_port_value,
+                            baudrate_value,
+                            parity_value,
+                        ]
+
+                        existing = rows_map.get(unit_id)
+                        if existing is None:
+                            rows_map[unit_id] = reordered_row
+                        else:
+                            existing_ip = existing[5]
+                            if not existing_ip and clean_ip_address:
                                 rows_map[unit_id] = reordered_row
 
                     rows = list(rows_map.values())
+                    if self.debug_mysql_logs:
+                        self.log_queue.put(('info', f"Parsed {len(rows)} rows from MySQL (iwmac/blank)."))
+
+                    # If primary returns zero rows, attempt fallback immediately
+                    if len(rows) == 0:
+                        self.log_queue.put(('info', "No rows from iwmac/blank; trying fallback credentials (root/blank)..."))
+                        try_fallback_credentials()
+                        return
                     
                     def update_table():
                         # Clear existing
@@ -1617,13 +1646,9 @@ class ModpollingTool:
                     self.log_queue.put(('info', f"Successfully loaded {len(rows)} units with COM port and IP address information!"))
                     
                 except Exception as e:
-                    # If primary credentials fail, try fallback credentials
-                    if "stdout is None" in str(e) or "splitlines" in str(e):
-                        self.log_queue.put(('info', "Primary database connection failed, trying fallback credentials..."))
-                        try_fallback_credentials()
-                    else:
-                        self.log_queue.put(('error', f"Error fetching units: {e}"))
-                        messagebox.showerror("Error", str(e))
+                    # If primary credentials fail for any reason, try fallback credentials
+                    self.log_queue.put(('info', f"Primary database connection failed (iwmac/blank). Trying fallback credentials..."))
+                    try_fallback_credentials()
             
             def try_fallback_credentials():
                 """Try connecting with fallback database credentials."""
@@ -1633,113 +1658,105 @@ class ModpollingTool:
                     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                     creationflags = subprocess.CREATE_NO_WINDOW
 
+                    # Fallback: root with blank password (validated)
                     fallback_cmd = [
                         self.mysql_exe_path,
                         "-h", "127.0.0.1",
-                        "-u", "SECRET",
-                        "-p", "EVENMORESECRET",
+                        "-u", "root",
+                        "--password=",
                         "-D", "iw_plant_server3",
                         "-N", "-B",
+                        "--protocol=tcp",
+                        "--default-character-set=utf8mb4",
+                        "--connect-timeout=5",
                         "-e", query,
                     ]
                     
-                    self.log_queue.put(('info', "Attempting connection with fallback credentials..."))
+                    self.log_queue.put(('info', "Attempting connection with fallback credentials (root/blank)..."))
                     
                     result = subprocess.run(
                         fallback_cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
+                        encoding='utf-8',
+                        errors='replace',
                         shell=False,
                         startupinfo=startupinfo,
                         creationflags=creationflags,
                     )
                     
-                    if result.stdout is None:
-                        raise Exception("Fallback database connection also failed - stdout is None")
-                    
                     if result.returncode != 0:
                         err = result.stderr.strip() or "Unknown MySQL error"
-                        self.log_queue.put(('error', f"Fallback MySQL query failed: {err}"))
+                        self.log_queue.put(('error', f"Fallback MySQL query failed (root/blank): rc={result.returncode}, stderr='{err}'"))
                         return
                     
+                    # Debug: count raw lines
+                    raw_output = result.stdout or ''
+                    raw_lines = raw_output.splitlines()
+                    if self.debug_mysql_logs:
+                        self.log_queue.put(('info', f"MySQL returned {len(raw_lines)} raw lines (root/blank). Parsing... (stdout {len(raw_output)} bytes, stderr {len((result.stderr or '').strip())} bytes)"))
+
                     # Build rows using a map to deduplicate by unit_id and prefer entries with IP
                     rows_map = {}
-                    for line in result.stdout.splitlines():
+                    for line in raw_lines:
                         if not line.strip():
                             continue
                         parts = line.split('\t')
-                        # Ensure we have exactly 9 columns (unit_id, unit_name, driver_type, driver_addr, regulator_type, com_port, ip_address, mb_mode, mb_tcp_servers)
-                        if len(parts) >= 9:
-                            # Extract only the IP address from the full value
-                            full_ip_value = parts[6]  # The full value from MySQL
-                            clean_ip_address = self.extract_ip_address(full_ip_value)
-                            
-                            # Get COM port value, mb_mode, and mb_tcp_servers
-                            com_port_value = parts[5]  # The COM port from MySQL
-                            mb_mode = parts[7]  # The Modbus mode from MySQL
-                            mb_tcp_servers = parts[8]  # The mb_tcp_servers value from MySQL
-                            
-                            # Handle TCP mode (mb_mode=2) - COM port should be blank, and extract IP from mb_tcp_servers if no IP from database
-                            if mb_mode == '2':
-                                com_port_value = ''  # Clear COM port for TCP mode
-                                
-                                # If no IP address found in regular IP field, try to extract from mb_tcp_servers
-                                if not clean_ip_address and mb_tcp_servers:
-                                    # mb_tcp_servers format: "0;192.168.10.100;502;1000;2;1000"
-                                    # Extract IP address from the second field (index 1)
-                                    tcp_parts = mb_tcp_servers.split(';')
-                                    if len(tcp_parts) >= 2:
-                                        tcp_ip = tcp_parts[1].strip()
-                                        if self.extract_ip_address(tcp_ip):
-                                            clean_ip_address = tcp_ip
-                            
-                            # Reorder data to match new column order: unit_id, unit_name, driver_type, driver_addr, regulator_type, ip_address, com_port
-                            reordered_row = [
-                                parts[0],  # unit_id
-                                parts[1],  # unit_name
-                                parts[2],  # driver_type
-                                parts[3],  # driver_addr
-                                parts[4],  # regulator_type
-                                clean_ip_address,  # Clean IP address (only the IP, no extra text)
-                                com_port_value   # com_port
-                            ]
 
-                            # Filter AK2: only keep entries that have an IP address
-                            unit_id = parts[0]
-                            driver_type = parts[2]
-                            if driver_type == 'AK2' and not clean_ip_address:
-                                continue
+                        # Safely unpack with defaults for optional columns
+                        unit_id = parts[0] if len(parts) > 0 else ''
+                        unit_name = parts[1] if len(parts) > 1 else ''
+                        driver_type = parts[2] if len(parts) > 2 else ''
+                        driver_addr = parts[3] if len(parts) > 3 else ''
+                        regulator_type = parts[4] if len(parts) > 4 else ''
+                        com_port_value = parts[5] if len(parts) > 5 else ''
+                        full_ip_value = parts[6] if len(parts) > 6 else ''
+                        mb_mode = parts[7] if len(parts) > 7 else '0'
+                        mb_tcp_servers = parts[8] if len(parts) > 8 else ''
+                        baudrate_value = parts[9] if len(parts) > 9 else ''
+                        parity_value_raw = parts[10] if len(parts) > 10 else ''
+                        parity_value = self.normalize_parity_value(parity_value_raw)
 
-                            # Deduplicate by unit_id, prefer rows with an IP address
-                            existing = rows_map.get(unit_id)
-                            if existing is None:
-                                rows_map[unit_id] = reordered_row
-                            else:
-                                existing_ip = existing[5]
-                                if not existing_ip and clean_ip_address:
-                                    rows_map[unit_id] = reordered_row
-                        elif len(parts) >= 5:
-                            # If we only get 5 columns, add empty values for ip_address and com_port
-                            # Skip AK2 entries without IP to avoid duplicates for AK2
-                            if len(parts) >= 3 and parts[2] == 'AK2':
-                                continue
+                        clean_ip_address = self.extract_ip_address(full_ip_value)
 
-                            reordered_row = [
-                                parts[0],  # unit_id
-                                parts[1],  # unit_name
-                                parts[2],  # driver_type
-                                parts[3],  # driver_addr
-                                parts[4],  # regulator_type
-                                '',        # ip_address (empty)
-                                ''         # com_port (empty)
-                            ]
+                        # Handle TCP mode (mb_mode=2)
+                        if mb_mode == '2':
+                            com_port_value = ''
+                            if not clean_ip_address and mb_tcp_servers:
+                                tcp_parts = mb_tcp_servers.split(';')
+                                if len(tcp_parts) >= 2:
+                                    tcp_ip = tcp_parts[1].strip()
+                                    if self.extract_ip_address(tcp_ip):
+                                        clean_ip_address = tcp_ip
 
-                            unit_id = parts[0]
-                            if unit_id not in rows_map:
+                        # Skip AK2 entries without IP address
+                        if driver_type == 'AK2' and not clean_ip_address:
+                            continue
+
+                        reordered_row = [
+                            unit_id,
+                            unit_name,
+                            driver_type,
+                            driver_addr,
+                            regulator_type,
+                            clean_ip_address,
+                            com_port_value,
+                            baudrate_value,
+                            parity_value,
+                        ]
+
+                        existing = rows_map.get(unit_id)
+                        if existing is None:
+                            rows_map[unit_id] = reordered_row
+                        else:
+                            existing_ip = existing[5]
+                            if not existing_ip and clean_ip_address:
                                 rows_map[unit_id] = reordered_row
 
                     rows = list(rows_map.values())
+                    if self.debug_mysql_logs:
+                        self.log_queue.put(('info', f"Parsed {len(rows)} rows from MySQL (root/blank)."))
                     
                     def update_table():
                         # Clear existing
@@ -1753,7 +1770,7 @@ class ModpollingTool:
                         self.root.after(100, self.auto_size_columns)
                     
                     self.root.after(0, update_table)
-                    self.log_queue.put(('info', f"Successfully loaded {len(rows)} units using fallback credentials!"))
+                    self.log_queue.put(('info', f"Successfully loaded {len(rows)} units with COM port and IP address information!"))
                     
                 except Exception as e:
                     self.log_queue.put(('error', f"Fallback database connection also failed: {e}"))
