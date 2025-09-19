@@ -264,7 +264,7 @@ class ModpollingTool:
 
     def ensure_modpoll_exists(self):
         r"""
-        Check if modpoll.exe exists in C:\iwmac\bin, if not download it automatically.
+        Ensure the modpoll directory exists and report if modpoll.exe is missing.
         """
         if not os.path.exists(self.modpoll_path):
             # Create directory if it doesn't exist
@@ -275,9 +275,8 @@ class ModpollingTool:
                 except Exception as e:
                     self.log_queue.put(('error', f"Failed to create directory {modpoll_dir}: {e}"))
                     return
-            
-            # Download modpoll.exe
-            self.download_modpoll()
+            # Inform user that modpoll.exe is missing
+            self.log_queue.put(('info', f"modpoll.exe not found. Download it and save to {self.modpoll_path}"))
 
     def download_modpoll(self):
         """
@@ -822,9 +821,17 @@ class ModpollingTool:
             ),
         )
 
-
-
-
+        # Get modpoll.exe download link
+        footer_label_center = ttk.Label(
+            footer_frame, text="Get modpoll.exe", foreground="blue", cursor="hand2"
+        )
+        footer_label_center.pack(side='left', padx=5, pady=5)
+        footer_label_center.bind(
+            "<Button-1>",
+            lambda e: webbrowser.open(
+                "https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe"
+            ),
+        )
 
         # Copyright label
         footer_label_right = ttk.Label(footer_frame, text="©TKH")
@@ -933,8 +940,17 @@ class ModpollingTool:
 
         # Check if modpoll.exe exists before starting
         if not os.path.exists(self.modpoll_path):
-            self.log_queue.put(('error', f"modpoll.exe not found at {self.modpoll_path}. Please wait for download to complete or check the path."))
-            messagebox.showwarning("Modpoll Not Found", f"modpoll.exe not found at {self.modpoll_path}. Please wait for download to complete or check the path.")
+            self.log_queue.put(('error', f"modpoll.exe not found at {self.modpoll_path}."))
+            open_dl = messagebox.askyesno(
+                "modpoll.exe missing",
+                (
+                    "modpoll.exe was not found.\n\n"
+                    "Open the official download now?\n\n"
+                    f"After downloading, save it to:\n{self.modpoll_path}"
+                ),
+            )
+            if open_dl:
+                webbrowser.open("https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe")
             return
 
         com_port_enhanced = self.cmb_comport.get().strip()
