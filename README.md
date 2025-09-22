@@ -23,8 +23,6 @@ On first run, the app will ensure `modpoll.exe` is available:
 - By default it will download to `C:\iwmac\bin\modpoll.exe` from a GitHub release.
 - If the folder does not exist, download if from here **[Download modpoll.exe](https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe)**
 
-Note: If you prefer to ship `modpoll.exe` inside your project folder and avoid any system-installed copy, see the configuration section below.
-
 
 ## Quick Start ⚡
 ## 📥 Download
