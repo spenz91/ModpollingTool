@@ -21,7 +21,7 @@ A modern Windows GUI for quickly polling Modbus devices using the `modpoll` util
 
 On first run, the app will ensure `modpoll.exe` is available:
 - By default it will download to `C:\iwmac\bin\modpoll.exe` from a GitHub release.
-- If the folder does not exist, it will create it. You may need to run with permissions that allow writing to `C:\iwmac\bin`.
+- If the folder does not exist, download if from here **[Download modpoll.exe](https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe)**
 
 Note: If you prefer to ship `modpoll.exe` inside your project folder and avoid any system-installed copy, see the configuration section below.
 
