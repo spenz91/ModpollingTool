@@ -2549,6 +2549,7 @@ Ready to poll..."""
             else:
                 self._write_to_terminal(f"Serial port configuration: {serial_config}", 'normal')
             self._write_to_terminal(f"Data type: {register_type_desc}", 'normal')
+            self._write_to_terminal("Protocol opened successfully.", 'normal')
 
             # Log the command (mask the full path to show just 'modpoll')
             masked_cmd = ['modpoll'] + arguments
@@ -2677,9 +2678,8 @@ Ready to poll..."""
                 ]):
                     continue
 
-                # Highlight successful protocol open (white)
+                # Skip "Protocol opened successfully" (we already display it immediately after configuration)
                 if "protocol opened successfully" in lower_line:
-                    self._write_to_terminal(line, 'normal')
                     self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
 
@@ -2736,9 +2736,8 @@ Ready to poll..."""
                     self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
 
-                # Highlight Modpoll config lines (white)
-                if lower_line.startswith(("protocol configuration:", "slave configuration:", "serial port configuration:", "data type:")):
-                    self._write_to_terminal(line, 'normal')
+                # Skip Modpoll config lines (we already display them immediately when polling starts)
+                if lower_line.startswith(("protocol configuration:", "slave configuration:", "serial port configuration:", "data type:", "tcp/ip configuration:")):
                     continue
 
                 # Can't reach slave (TCP/IP issue) - accent purple
