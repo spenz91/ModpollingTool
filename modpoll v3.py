@@ -1616,7 +1616,7 @@ class ModpollingTool:
             footer_frame,
             text="📖  Modpoll Guide",
             command=lambda: webbrowser.open(
-                "https://iwmac.zendesk.com/hc/en-gb/articles/13020280416416796-Installasjon-Modpoll-Guide"
+                "https://iwmac.zendesk.com/hc/en-gb/articles/13020280416796-Installasjon-Modpoll-Guide"
             ),
             fg_color="transparent",
             hover_color=self.bg_card,
