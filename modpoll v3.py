@@ -65,7 +65,7 @@ class ModpollingTool:
         self.modpoll_process = None
         self.is_polling = False
         self.log_queue = queue.Queue()
-        # Batched terminal writes (thread-safe queue for CMD-like real-time output)
+        # Batched terminal writes (thread-safe queue for real-time output without UI freeze)
         self.terminal_write_queue = queue.Queue()
         self.terminal_flush_scheduled = False
         self.last_status_update = None  # Throttle status indicator updates
@@ -1568,7 +1568,7 @@ class ModpollingTool:
         # Determine best monospace font available
         mono_font = self.get_best_monospace_font()
         
-        # Log Text - Modern terminal textbox
+        # Log Text - Modern terminal textbox (optimized for fast polling)
         self.txt_log = ctk.CTkTextbox(
             self.frame_log,
             width=600,
@@ -1585,6 +1585,9 @@ class ModpollingTool:
             scrollbar_button_hover_color=self.accent_secondary
         )
         self.txt_log.grid(column=0, row=2, sticky="NSEW", padx=15, pady=(0, 15))
+        
+        # Performance optimization: Limit terminal to last 3000 lines to prevent memory issues
+        self.terminal_max_lines = 3000
         
         # Store the internal text widget for tag configuration
         try:
@@ -2606,50 +2609,100 @@ Ready to poll..."""
         self._write_to_terminal(f"Attempt {self.poll_attempt_counter}", 'normal')
 
     def _write_to_terminal(self, message, tag=None):
-        """Write instantly to terminal (no batch delay)."""
-        try:
-            self.txt_log.configure(state="normal")
-            if tag:
-                self.txt_log._textbox.insert("end", f"{message}\n", tag)
-            else:
-                self.txt_log._textbox.insert("end", f"{message}\n")
-            self.txt_log.see("end")
-            self.txt_log.configure(state="disabled")
-            self.root.update_idletasks()
-        except Exception as e:
-            self.log_queue.put((tag or 'normal', message))
-
+        """Queue terminal write (fast + non-blocking UI)."""
+        self.terminal_write_queue.put((message, tag))
+        if not self.terminal_flush_scheduled:
+            self.terminal_flush_scheduled = True
+            # Kick an immediate flush; subsequent flushes are throttled inside _flush_terminal_writes
+            self.root.after(0, self._flush_terminal_writes)
+    
     def _flush_terminal_writes(self):
-        """Flush all queued terminal writes in one UI update (like CMD)."""
+        """Flush queued terminal writes without lag (few inserts, time-sliced)."""
         self.terminal_flush_scheduled = False
+        t = None
         try:
+            import time as _time
+
             t = self.txt_log._textbox
-            self.txt_log.configure(state="normal")
-            
-            # Process queued writes in small batches to keep UI responsive
-            count = 0
-            max_batch = 20  # Smaller batches = more responsive UI
-            while count < max_batch:
+            # Only auto-scroll if user is already at the bottom
+            try:
+                at_bottom = (t.yview()[1] >= 0.995)
+            except Exception:
+                at_bottom = True
+
+            # Drain some items within a small time budget (keeps UI responsive)
+            start = _time.perf_counter()
+            budget_s = 0.012  # ~12ms per tick
+            max_items = 500   # hard cap per tick
+            items = []
+
+            while len(items) < max_items and (_time.perf_counter() - start) < budget_s:
                 try:
                     message, tag = self.terminal_write_queue.get_nowait()
-                    if tag:
-                        t.insert("end", f"{message}\n", tag)
-                    else:
-                        t.insert("end", f"{message}\n")
-                    count += 1
+                    items.append((message, tag))
                 except Exception:
                     break
-            
-            if count > 0:
-                self.txt_log.see("end")
-                self.txt_log.configure(state="disabled")
-                # If more items queued, schedule another flush immediately
+
+            if not items:
+                return
+
+            self.txt_log.configure(state="normal")
+
+            # Group consecutive messages by tag so we insert big chunks (MUCH faster)
+            def _insert_chunk(chunk_text: str, chunk_tag):
+                if not chunk_text:
+                    return
+                if chunk_tag:
+                    t.insert("end", chunk_text, chunk_tag)
+                else:
+                    t.insert("end", chunk_text)
+
+            cur_tag = items[0][1]
+            buf = []
+            inserted_lines = 0
+            for msg, tag in items:
+                if tag != cur_tag:
+                    _insert_chunk("".join(buf), cur_tag)
+                    buf = []
+                    cur_tag = tag
+                buf.append(f"{msg}\n")
+                inserted_lines += 1
+            _insert_chunk("".join(buf), cur_tag)
+
+            # Trim occasionally (avoid expensive line counting every tick)
+            try:
+                if not hasattr(self, "_terminal_line_count_est") or self._terminal_line_count_est is None:
+                    self._terminal_line_count_est = int(t.index("end-1c").split(".")[0])
+                else:
+                    self._terminal_line_count_est += inserted_lines
+
+                if self._terminal_line_count_est > (self.terminal_max_lines + 200):
+                    line_count = int(t.index("end-1c").split(".")[0])
+                    if line_count > self.terminal_max_lines:
+                        lines_to_delete = line_count - self.terminal_max_lines
+                        t.delete("1.0", f"{lines_to_delete + 1}.0")
+                        self._terminal_line_count_est = self.terminal_max_lines
+                    else:
+                        self._terminal_line_count_est = line_count
+            except Exception:
+                # If anything goes wrong, skip trimming this tick
+                pass
+
+            if at_bottom:
+                t.see("end")
+
+        finally:
+            try:
+                if t is not None:
+                    self.txt_log.configure(state="disabled")
+            except Exception:
+                pass
+
+            # If more output is pending, schedule next flush at ~60fps
+            try:
                 if not self.terminal_write_queue.empty():
                     self.terminal_flush_scheduled = True
-                    self.root.after(0, self._flush_terminal_writes)
-        except Exception:
-            try:
-                self.txt_log.configure(state="disabled")
+                    self.root.after(16, self._flush_terminal_writes)
             except Exception:
                 pass
 
