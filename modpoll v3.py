@@ -2498,6 +2498,16 @@ Ready to poll..."""
         # Start polling thread
         threading.Thread(target=self.run_modpoll, args=(arguments, com_port, baudrate, parity, databits, stopbits, adresse, start_reference, num_registers, register_data_type), daemon=True).start()
 
+    def _get_register_type_description(self, register_data_type):
+        """Map register data type number to description."""
+        type_map = {
+            "0": "coil",
+            "1": "discrete input",
+            "3": "16-bit register, input register table",
+            "4": "16-bit register, holding register table",
+        }
+        return type_map.get(str(register_data_type), f"type {register_data_type}")
+
     def run_modpoll(self, arguments, com_port, baudrate, parity, databits, stopbits, adresse, start_reference, num_registers, register_data_type):
         # start_polling() already set is_polling/update_buttons to avoid double-start races
         self._write_to_terminal("Polling started...", 'info')
@@ -2510,6 +2520,35 @@ Ready to poll..."""
                 return
 
             cmd = [modpoll_path] + arguments
+
+            # Determine protocol type (RTU or TCP/IP)
+            use_tcp = "-m" in arguments and "tcp" in arguments
+            protocol_type = "Modbus TCP/IP" if use_tcp else "Modbus RTU"
+            
+            # Format serial port configuration
+            if use_tcp:
+                # For TCP/IP, find the IP address in arguments
+                tcp_addr = ""
+                if "-m" in arguments:
+                    tcp_idx = arguments.index("-m")
+                    if tcp_idx + 1 < len(arguments) and arguments[tcp_idx + 1] == "tcp":
+                        if tcp_idx + 2 < len(arguments):
+                            tcp_addr = arguments[tcp_idx + 2]
+                serial_config = f"TCP/IP address: {tcp_addr}" if tcp_addr else "TCP/IP"
+            else:
+                serial_config = f"{com_port}, {baudrate}, {databits}, {stopbits}, {parity}"
+            
+            # Get register type description
+            register_type_desc = self._get_register_type_description(register_data_type)
+
+            # Display configuration immediately (white text like modpoll output)
+            self._write_to_terminal(f"Protocol configuration: {protocol_type}", 'normal')
+            self._write_to_terminal(f"Slave configuration: Address = {adresse}, start reference = {start_reference}, count = {num_registers}", 'normal')
+            if use_tcp:
+                self._write_to_terminal(f"TCP/IP configuration: {tcp_addr if tcp_addr else 'TCP/IP'}", 'normal')
+            else:
+                self._write_to_terminal(f"Serial port configuration: {serial_config}", 'normal')
+            self._write_to_terminal(f"Data type: {register_type_desc}", 'normal')
 
             # Log the command (mask the full path to show just 'modpoll')
             masked_cmd = ['modpoll'] + arguments
