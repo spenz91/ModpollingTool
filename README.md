@@ -15,7 +15,7 @@ A modern Windows GUI for quickly polling Modbus devices using the `modpoll` util
 - **🔢 Auto-handling of COM10+** ports using `\\.\COMn` format
 
 <p align="center">
-    <img width="900" src="https://i.ibb.co/hst67zM/Skjermbilde-2024-11-18-142520.png" alt="Material Bread logo">
+    <img width="900" src="https://i.ibb.co/yFKZTnGw/2026-01-09-12-58-10-modpoll-py-Modoll-Workspace-Cursor.png" alt="Material Bread logo">
 </p>
 
 
