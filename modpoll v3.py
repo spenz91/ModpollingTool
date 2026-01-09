@@ -65,6 +65,11 @@ class ModpollingTool:
         self.modpoll_process = None
         self.is_polling = False
         self.log_queue = queue.Queue()
+        # Batched terminal writes (thread-safe queue for CMD-like real-time output)
+        self.terminal_write_queue = queue.Queue()
+        self.terminal_flush_scheduled = False
+        self.last_status_update = None  # Throttle status indicator updates
+        self.last_status_time = 0  # Time of last status update
         
         # Units data and filter state
         self.units_rows = []
@@ -2564,20 +2569,52 @@ Ready to poll..."""
         self._write_to_terminal(f"Attempt {self.poll_attempt_counter}", 'normal')
 
     def _write_to_terminal(self, message, tag=None):
-        """Write directly to terminal like CMD (thread-safe via after_idle)."""
-        def do_write():
-            try:
-                self.txt_log.configure(state="normal")
-                if tag:
-                    self.txt_log._textbox.insert("end", f"{message}\n", tag)
-                else:
-                    self.txt_log._textbox.insert("end", f"{message}\n")
+        """Write instantly to terminal (no batch delay)."""
+        try:
+            self.txt_log.configure(state="normal")
+            if tag:
+                self.txt_log._textbox.insert("end", f"{message}\n", tag)
+            else:
+                self.txt_log._textbox.insert("end", f"{message}\n")
+            self.txt_log.see("end")
+            self.txt_log.configure(state="disabled")
+            self.root.update_idletasks()
+        except Exception as e:
+            self.log_queue.put((tag or 'normal', message))
+
+    def _flush_terminal_writes(self):
+        """Flush all queued terminal writes in one UI update (like CMD)."""
+        self.terminal_flush_scheduled = False
+        try:
+            t = self.txt_log._textbox
+            self.txt_log.configure(state="normal")
+            
+            # Process queued writes in small batches to keep UI responsive
+            count = 0
+            max_batch = 20  # Smaller batches = more responsive UI
+            while count < max_batch:
+                try:
+                    message, tag = self.terminal_write_queue.get_nowait()
+                    if tag:
+                        t.insert("end", f"{message}\n", tag)
+                    else:
+                        t.insert("end", f"{message}\n")
+                    count += 1
+                except Exception:
+                    break
+            
+            if count > 0:
                 self.txt_log.see("end")
                 self.txt_log.configure(state="disabled")
-                self.root.update_idletasks()
+                # If more items queued, schedule another flush immediately
+                if not self.terminal_write_queue.empty():
+                    self.terminal_flush_scheduled = True
+                    self.root.after(0, self._flush_terminal_writes)
+        except Exception:
+            try:
+                self.txt_log.configure(state="disabled")
             except Exception:
                 pass
-        self.root.after_idle(do_write)
 
     def read_stream(self, stream):
         """Read modpoll output and write directly to terminal like CMD (real-time)."""
@@ -2682,7 +2719,13 @@ Ready to poll..."""
                             self._increment_attempt()
                         self.last_seen_reference = ref_num
                     self._write_to_terminal(f"{line} - Device is responding", 'response_ok')
-                    self.root.after_idle(lambda: self.trigger_status_indicator('green'))
+                    # Throttle status updates: only update once per second for fast responses
+                    import time
+                    now = time.time()
+                    if self.last_status_update != 'green' or (now - self.last_status_time) >= 1.0:
+                        self.last_status_update = 'green'
+                        self.last_status_time = now
+                        self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
 
                 # Default
