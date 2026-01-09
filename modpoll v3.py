@@ -2522,26 +2522,23 @@ Ready to poll..."""
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             creationflags = subprocess.CREATE_NO_WINDOW
 
+            # Ensure unbuffered output from modpoll.exe for real-time display
+            env = dict(os.environ)
+            env['PYTHONUNBUFFERED'] = '1'
+            
             self.modpoll_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # merge for ordered output and fewer threads
+                stderr=subprocess.STDOUT,  # merge for ordered output
                 text=True,
                 shell=False,
                 startupinfo=startupinfo,
                 creationflags=creationflags,
-                bufsize=1,  # line-buffered reader (child may still buffer, but UI stays smooth)
-                env=dict(os.environ, PYTHONUNBUFFERED="1"),
+                bufsize=1,  # line-buffered (unbuffered mode)
+                env=env,
             )
 
-            # Small delay before showing device responses (keeps UI snappy/clean)
-            try:
-                import time
-                time.sleep(0.25)
-            except Exception:
-                pass
-
-            # Start threads to read stdout and stderr
+            # Start thread to read stdout immediately (matches example pattern for real-time output)
             stdout_thread = threading.Thread(
                 target=self.read_stream, args=(self.modpoll_process.stdout,), daemon=True
             )
@@ -2550,7 +2547,7 @@ Ready to poll..."""
             # Wait for the process to finish
             self.modpoll_process.wait()
 
-            # Wait for the reader thread to finish
+            # Wait for the reader thread to finish (ensures all output is processed)
             stdout_thread.join()
 
         except Exception as e:
@@ -2619,8 +2616,11 @@ Ready to poll..."""
     def read_stream(self, stream):
         """Read modpoll output and write directly to terminal like CMD (real-time)."""
         try:
+            # Use iter(stream.readline, '') for line-by-line reading (matches example pattern)
             for raw in iter(stream.readline, ""):
-                line = raw.strip()
+                if not raw:  # EOF
+                    break
+                line = raw.rstrip()  # Use rstrip() instead of strip() to preserve leading whitespace if needed
                 if not line:
                     continue
 
@@ -2731,6 +2731,7 @@ Ready to poll..."""
                 # Default
                 self._write_to_terminal(line, 'normal')
         finally:
+            # Close stream properly (matches example pattern)
             try:
                 stream.close()
             except Exception:
