@@ -2555,7 +2555,15 @@ Ready to poll..."""
             self._write_to_terminal("Protocol opened successfully.", 'normal')
 
             # Log the command (mask the full path to show just 'modpoll')
-            masked_cmd = ['modpoll'] + arguments
+            # IMPORTANT: Many Windows builds of modpoll.exe buffer output when stdout is piped,
+            # causing updates to appear in bursts in the GUI. To guarantee 1-second updates
+            # (same behavior as running in a real CMD console), we run modpoll in single-shot
+            # mode (-1) and loop in Python once per second.
+            #
+            # This makes each poll a short-lived process; output is always flushed on exit.
+            single_shot_arguments = [a for a in arguments if str(a).strip() != "-1"] + ["-1"]
+
+            masked_cmd = ['modpoll'] + single_shot_arguments
             # Show these in white (normal) for readability
             self._write_to_terminal(f"Running command: {' '.join(masked_cmd)}", 'normal')
             self._write_to_terminal(f"Parameters: COM={com_port}, Baud={baudrate}, Parity={parity}, DataBits={databits}, StopBits={stopbits}, Addr={adresse}, Ref={start_reference}, Count={num_registers}, Type={register_data_type}", 'normal')
@@ -2565,33 +2573,50 @@ Ready to poll..."""
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             creationflags = subprocess.CREATE_NO_WINDOW
 
-            # Ensure unbuffered output from modpoll.exe for real-time display
-            env = dict(os.environ)
-            env['PYTHONUNBUFFERED'] = '1'
-            
-            self.modpoll_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # merge for ordered output
-                text=True,
-                shell=False,
-                startupinfo=startupinfo,
-                creationflags=creationflags,
-                bufsize=1,  # line-buffered (unbuffered mode)
-                env=env,
-            )
+            # Replace cmd with the single-shot version.
+            cmd = [modpoll_path] + single_shot_arguments
 
-            # Start thread to read stdout immediately (matches example pattern for real-time output)
-            stdout_thread = threading.Thread(
-                target=self.read_stream, args=(self.modpoll_process.stdout,), daemon=True
-            )
-            stdout_thread.start()
+            # Loop once per second while polling is active.
+            import io
+            import time
+            while self.is_polling:
+                loop_start = time.perf_counter()
 
-            # Wait for the process to finish
-            self.modpoll_process.wait()
+                try:
+                    self.modpoll_process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,  # merge for ordered output
+                        text=True,
+                        shell=False,
+                        startupinfo=startupinfo,
+                        creationflags=creationflags,
+                    )
 
-            # Wait for the reader thread to finish (ensures all output is processed)
-            stdout_thread.join()
+                    # Wait for this single poll to finish and grab all output.
+                    out, _ = self.modpoll_process.communicate(timeout=15)
+                    if out:
+                        # Reuse existing parser by feeding a file-like object.
+                        self.read_stream(io.StringIO(out))
+                except subprocess.TimeoutExpired:
+                    try:
+                        self.modpoll_process.terminate()
+                    except Exception:
+                        pass
+                    try:
+                        self.modpoll_process.kill()
+                    except Exception:
+                        pass
+                    self._write_to_terminal("Poll timed out (modpoll did not exit).", "error")
+                    self.root.after_idle(lambda: self.trigger_status_indicator('red'))
+                finally:
+                    self.modpoll_process = None
+
+                # Aim for ~1s cadence.
+                elapsed = time.perf_counter() - loop_start
+                remaining = 1.0 - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
 
         except Exception as e:
             self._write_to_terminal(f"Error running Modpoll: {str(e)}", 'error')
