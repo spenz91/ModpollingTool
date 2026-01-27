@@ -15,6 +15,8 @@ import datetime
 import urllib
 import urllib.request
 import urllib.error
+import io
+import time
 
 # Set CustomTkinter appearance and smooth animations
 ctk.set_appearance_mode("dark")  # Modes: "System" (default), "Dark", "Light"
@@ -64,6 +66,7 @@ class ModpollingTool:
         
         self.modpoll_process = None
         self.is_polling = False
+        self.is_auto_detecting = False
         self.log_queue = queue.Queue()
         # Batched terminal writes (thread-safe queue for real-time output without UI freeze)
         self.terminal_write_queue = queue.Queue()
@@ -1190,6 +1193,23 @@ class ModpollingTool:
         )
         self.btn_start.grid(row=0, column=0, padx=10, pady=5, sticky="e")
 
+        # Auto Detect Button - fast scan COM/baud/parity
+        self.btn_auto_detect = ctk.CTkButton(
+            btn_frame,
+            text="🔎  AUTO DETECT",
+            command=self.start_auto_detect,
+            font=("Segoe UI", 14, "bold"),
+            fg_color=self.bg_tertiary,
+            hover_color=self.accent_primary,
+            text_color=self.text_primary,
+            corner_radius=12,
+            height=50,
+            width=200,
+            border_width=1,
+            border_color=self.bg_card,
+        )
+        self.btn_auto_detect.grid(row=1, column=0, padx=10, pady=(5, 0), sticky="e")
+
         # Stop Polling Button - Modern muted style
         self.btn_stop = ctk.CTkButton(
             btn_frame,
@@ -1207,6 +1227,9 @@ class ModpollingTool:
             state="normal"
         )
         self.btn_stop.grid(row=0, column=1, padx=10, pady=5, sticky="e")
+
+        # Align second row height
+        btn_frame.grid_rowconfigure(1, weight=0)
 
         # Store the frame background color
         self.frame_bg_color = self.bg_primary
@@ -2577,12 +2600,23 @@ Ready to poll..."""
             cmd = [modpoll_path] + single_shot_arguments
 
             # Loop once per second while polling is active.
-            import io
-            import time
+            # NOTE: We print "Polling slave ..." once at the top (like modpoll),
+            # and we print "Attempt N" before each poll so output order is stable:
+            #
+            # Attempt 1
+            # Polling slave (ctrl-c to stop) ...
+            # [15]: -1 - Device is responding
+            #
+            # modpoll's own "Polling slave ..." line is skipped in read_stream().
             while self.is_polling:
                 loop_start = time.perf_counter()
 
                 try:
+                    # One attempt per second (stable, predictable)
+                    self._increment_attempt()
+                    if self.poll_attempt_counter == 1:
+                        self._write_to_terminal("Polling slave (ctrl-c to stop) ...", "normal")
+
                     self.modpoll_process = subprocess.Popen(
                         cmd,
                         stdout=subprocess.PIPE,
@@ -2744,8 +2778,9 @@ Ready to poll..."""
 
                 lower_line = line.lower()
 
-                # Skip the polling slave line - don't show it
-                if "polling slave (ctrl-c to stop) ..." in lower_line:
+                # Skip any polling-loop banner from modpoll itself.
+                # We print our own single "Polling slave ..." line at the top.
+                if "polling slave" in lower_line:
                     continue
 
                 # Skip modpoll header and copyright information
@@ -2763,7 +2798,6 @@ Ready to poll..."""
 
                 # Handle time-outs (Reply / Send)
                 if "time-out!" in lower_line:
-                    self._increment_attempt()
                     if "send time-out!" in lower_line:
                         self._write_to_terminal("Send time-out! - No response from device", 'error')
                     else:
@@ -2795,21 +2829,18 @@ Ready to poll..."""
 
                 # Handle "illegal function exception response!"
                 if "illegal function exception response!" in lower_line:
-                    self._increment_attempt()
                     self._write_to_terminal("Illegal Function Exception Response!", 'info')
                     self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
 
                 # Handle "illegal data address exception response!"
                 if "illegal data address exception response!" in lower_line:
-                    self._increment_attempt()
                     self._write_to_terminal("Illegal Data Address Exception Response! - Device is responding", 'info')
                     self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
 
                 # Handle "illegal data value exception response!"
                 if "illegal data value exception response!" in lower_line:
-                    self._increment_attempt()
                     self._write_to_terminal("Illegal Data Value Exception Response!", 'info')
                     self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
@@ -2831,8 +2862,6 @@ Ready to poll..."""
                         ref_num = ref_match.group(1)
                         # Detect start of a new polling cycle: same reference appears again
                         # (works even if user changed -r, since we track what we actually see)
-                        if self.last_seen_reference is not None and ref_num == self.last_seen_reference:
-                            self._increment_attempt()
                         self.last_seen_reference = ref_num
                     self._write_to_terminal(f"{line} - Device is responding", 'response_ok')
                     # Throttle status updates: only update once per second for fast responses
@@ -2854,6 +2883,9 @@ Ready to poll..."""
                 pass
 
     def stop_polling(self):
+        # Stop auto-detect if running
+        self.is_auto_detecting = False
+
         if self.modpoll_process and self.modpoll_process.poll() is None:
             try:
                 self.modpoll_process.terminate()
@@ -2889,6 +2921,15 @@ Ready to poll..."""
                 text_color="white",
                 border_color=self.accent_error
             )
+            try:
+                self.btn_auto_detect.configure(
+                    state="disabled",
+                    fg_color=self.bg_tertiary,
+                    text_color=self.text_secondary,
+                    border_color=self.bg_tertiary
+                )
+            except Exception:
+                pass
         else:
             # Enable start button and restore appearance
             self.btn_start.configure(
@@ -2906,6 +2947,310 @@ Ready to poll..."""
                 text_color=self.text_secondary,
                 border_color=self.bg_tertiary
             )
+            try:
+                self.btn_auto_detect.configure(
+                    state="normal",
+                    fg_color=self.bg_tertiary,
+                    hover_color=self.accent_primary,
+                    text_color=self.text_primary,
+                    border_color=self.bg_card
+                )
+            except Exception:
+                pass
+
+    def _auto_detect_get_ports(self):
+        """Get ports to scan (from combobox values, plus current selection if typed)."""
+        ports = []
+        try:
+            vals = self.cmb_comport.cget("values") or []
+            for v in vals:
+                s = str(v).strip()
+                if not s:
+                    continue
+                # Values can be enhanced names like "COM1 - SLV" → extract real COMx
+                s = self.extract_com_port_from_enhanced_name(s)
+                if s:
+                    ports.append(str(s).strip())
+        except Exception:
+            pass
+
+        # Include what user typed/selected (may not be in values list)
+        try:
+            cur = self.cmb_comport.get().strip()
+            cur = self.extract_com_port_from_enhanced_name(cur)
+            if cur:
+                ports.append(cur)
+        except Exception:
+            pass
+
+        # Normalize, de-dup
+        seen = set()
+        out = []
+        for p in ports:
+            pp = p.strip()
+            if not pp:
+                continue
+            key = pp.upper()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(pp)
+        return out
+
+    def _auto_detect_get_baudrates(self):
+        """
+        Baudrates to scan.
+        Priority: 9600, 19200 first (then current if different, then the rest).
+        """
+        priority = ["9600", "19200"]
+        default = ["2400", "4800", "38400", "57600", "115200"]
+
+        cur = ""
+        try:
+            cur = str(self.cmb_baudrate.get()).strip()
+        except Exception:
+            cur = ""
+
+        out = []
+        for b in priority:
+            if b not in out:
+                out.append(b)
+        if cur and cur not in out:
+            out.append(cur)
+        for b in default:
+            if b not in out:
+                out.append(b)
+        return out
+
+    def _auto_detect_get_parities(self):
+        """
+        Parities to scan.
+        Priority: none, even first (then current if different, then odd).
+        """
+        priority = ["none", "even"]
+        default = ["odd"]
+
+        cur = ""
+        try:
+            cur = str(self.cmb_parity.get()).strip().lower()
+        except Exception:
+            cur = ""
+
+        out = []
+        for p in priority:
+            if p not in out:
+                out.append(p)
+        if cur and cur not in out:
+            out.append(cur)
+        for p in default:
+            if p not in out:
+                out.append(p)
+        return out
+
+    def _auto_detect_try_once(self, com_port, baudrate, parity, slave_address):
+        """
+        Run one fast modpoll attempt and return (ok, summary).
+        ok=True means we saw a real response (register line or illegal-* response).
+        """
+        if not os.path.exists(self.modpoll_path):
+            return False, "modpoll.exe not found"
+
+        # IMPORTANT: Auto-detect should ignore all other settings.
+        # Only scan: COM port + baudrate + parity + address.
+        # Auto-detect should be minimal (as requested):
+        # modpoll COMx -b9600 -pnone -a52
+        #
+        # NOTE: We intentionally do NOT add extra flags like -d/-s/-r/-c/-t here.
+        cmd = [
+            self.modpoll_path,
+            self.format_com_port(com_port),
+            f"-b{baudrate}",
+            f"-p{parity}",
+            f"-a{slave_address}",
+        ]
+
+        # Run it with a short timeout (fast scan)
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        creationflags = subprocess.CREATE_NO_WINDOW
+
+        try:
+            p = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                shell=False,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
+            )
+            # Fast scan: hard 5s per attempt (as requested)
+            out, _ = p.communicate(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            try:
+                p.terminate()
+            except Exception:
+                pass
+            try:
+                p.kill()
+            except Exception:
+                pass
+            return False, "timeout"
+        except Exception as e:
+            return False, str(e)
+
+        text_out = out or ""
+        low = text_out.lower()
+
+        # Success signals:
+        # - register line like "[100]: 123"
+        # - illegal-* exception response (device responded, but wrong register/function)
+        if re.search(r"^\\[\\s*\\d+\\s*\\]\\s*:", text_out, flags=re.M):
+            return True, "register response"
+        if "illegal function exception response" in low:
+            return True, "illegal function (responding)"
+        if "illegal data address exception response" in low:
+            return True, "illegal address (responding)"
+        if "illegal data value exception response" in low:
+            return True, "illegal value (responding)"
+
+        return False, "no response"
+
+    def start_auto_detect(self):
+        """Fast scan across COM/baud/parity and print where it responds."""
+        if getattr(self, "is_polling", False):
+            self._write_to_terminal("Stop polling before auto-detect.", "accent")
+            return
+        if getattr(self, "is_auto_detecting", False):
+            self._write_to_terminal("Auto-detect is already running.", "accent")
+            return
+
+        # Always use the address typed in the Basic tab (-a)
+        slave_address = ""
+        try:
+            slave_address = str(self.entry_slave_address.get()).strip()
+        except Exception:
+            slave_address = ""
+        if not slave_address.isdigit():
+            self._write_to_terminal("Auto-detect: invalid Address (-a). Enter a numeric address (e.g. 52).", "error")
+            return
+
+        self._write_to_terminal(f"Auto-detect using address: -a{slave_address}", "normal")
+
+        ports = self._auto_detect_get_ports()
+
+        # Scan order should match:
+        # 9600 none -> 19200 none -> 9600 even -> 19200 even -> 9600 odd -> 19200 odd
+        combos = [
+            ("9600", "none"),
+            ("19200", "none"),
+            ("9600", "even"),
+            ("19200", "even"),
+            ("9600", "odd"),
+            ("19200", "odd"),
+        ]
+
+        if not ports:
+            self._write_to_terminal("Auto-detect: no COM ports found. Click Refresh or type COMx manually.", "error")
+            return
+
+        self.is_auto_detecting = True
+        self._write_to_terminal("═" * 70, "normal")
+        self._write_to_terminal(f"Auto-detect started (ports={len(ports)}, tries_per_port={len(combos)}).", "normal")
+        self._write_to_terminal("Scanning... (click STOP to cancel)", "accent")
+
+        def worker():
+            found = None  # (port, baud, parity, summary)
+            tried = 0
+            pause_s = 0.25  # pause between every auto-detect modpoll attempt
+
+            for port in ports:
+                if not self.is_auto_detecting:
+                    break
+                for baud, par in combos:
+                    if not self.is_auto_detecting:
+                        break
+                    tried += 1
+                    # Show the exact command being tried (throttle to avoid huge logs)
+                    if tried <= 30 or tried % 25 == 0:
+                        self._write_to_terminal(
+                            f"Trying: modpoll {port} -b{baud} -p{par} -a{slave_address}",
+                            "normal",
+                        )
+
+                    ok, summary = self._auto_detect_try_once(port, baud, par, slave_address)
+                    if tried == 1 or tried % 15 == 0:
+                        self._write_to_terminal(f"Auto-detect progress: tried {tried}...", "normal")
+                    if ok:
+                        found = (port, baud, par, summary)
+                        break
+
+                    # Pause between attempts (prevents hammering adapters/devices)
+                    if self.is_auto_detecting and pause_s > 0:
+                        try:
+                            time.sleep(pause_s)
+                        except Exception:
+                            pass
+                if found:
+                    break
+
+                # Small pause between ports so USB/COM adapters fully release the handle
+                try:
+                    time.sleep(0.15)
+                except Exception:
+                    pass
+
+            def finish_ui():
+                # Detect if we were cancelled before we clear the flag
+                was_cancelled = (not self.is_auto_detecting)
+                # Always stop flag when finishing
+                self.is_auto_detecting = False
+
+                if found:
+                    port, baud, par, summary = found
+                    self._write_to_terminal("✓ AUTO-DETECT FOUND RESPONSE", "info")
+                    self._write_to_terminal(f"COM={port}  Baud={baud}  Parity={par}  ({summary})", "response_ok")
+
+                    # Apply into UI fields
+                    try:
+                        self.cmb_comport.set(port)
+                    except Exception:
+                        pass
+                    try:
+                        self.cmb_baudrate.set(str(baud))
+                    except Exception:
+                        pass
+                    try:
+                        self.cmb_parity.set(str(par))
+                    except Exception:
+                        pass
+
+                    try:
+                        self.build_and_display_command()
+                    except Exception:
+                        pass
+                    try:
+                        self.trigger_status_indicator("green")
+                    except Exception:
+                        pass
+                else:
+                    if was_cancelled and tried > 0:
+                        self._write_to_terminal(f"Auto-detect cancelled after {tried} tries.", "accent")
+                    else:
+                        self._write_to_terminal(f"Auto-detect finished: no response after {tried} tries.", "error")
+                        try:
+                            self.trigger_status_indicator("red")
+                        except Exception:
+                            pass
+
+                self._write_to_terminal("═" * 70, "normal")
+
+            try:
+                self.root.after(0, finish_ui)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def append_log(self, message, tag=None):
         # CustomTkinter textbox with proper tag support
