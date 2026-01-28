@@ -154,17 +154,4 @@ Modern Windows GUI for quickly testing Modbus devices using the Modpoll utility.
 - **Port or socket open error / Reply time-out**: Verify wiring/IP/port, parity/baudrate, address, and that the device is reachable.
 
 
-## Changelog 📋
-
-### v3 (Latest)
-- ✅ Added **Auto-Detect button** for automatic device scanning across COM/baud/parity
-- ✅ Fixed **output buffering** — now updates every 1 second (like CMD terminal)
-- ✅ **"Attempt N"** shown before each poll result
-- ✅ **"Polling slave ..."** shown only once at the top
-- ✅ **Green theme** for START POLLING and AUTO DETECT buttons
-- ✅ **Red STOP button** activates during polling or auto-detect
-- ✅ Improved COM port detection (handles enhanced names like "COM1 - SLV")
-- ✅ Modern dark UI with **CustomTkinter** and glassmorphism styling
-- ✅ Configurable auto-detect timeout (5s) and pause between attempts (0.25s)
-
 
