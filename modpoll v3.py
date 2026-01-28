@@ -1182,14 +1182,14 @@ class ModpollingTool:
             text="▶  START POLLING",
             command=self.start_polling,
             font=("Segoe UI", 14, "bold"),
-            fg_color=self.accent_primary,
-            hover_color=self.accent_secondary,
+            fg_color=self.accent_success,
+            hover_color="#059669",
             text_color="white",
             corner_radius=12,
             height=50,
             width=200,
             border_width=2,
-            border_color=self.accent_glow
+            border_color=self.accent_success
         )
         self.btn_start.grid(row=0, column=0, padx=10, pady=5, sticky="e")
 
@@ -1199,14 +1199,14 @@ class ModpollingTool:
             text="🔎  AUTO DETECT",
             command=self.start_auto_detect,
             font=("Segoe UI", 14, "bold"),
-            fg_color=self.bg_tertiary,
-            hover_color=self.accent_primary,
-            text_color=self.text_primary,
+            fg_color=self.bg_tertiary,          # "outlined" feel in idle state
+            hover_color=self.accent_success,    # turns green on hover
+            text_color="white",
             corner_radius=12,
             height=50,
             width=200,
             border_width=1,
-            border_color=self.bg_card,
+            border_color=self.accent_success,
         )
         self.btn_auto_detect.grid(row=1, column=0, padx=10, pady=(5, 0), sticky="e")
 
@@ -2905,7 +2905,8 @@ Ready to poll..."""
             self.log_queue.put(('info', "No polling process to stop."))
 
     def update_buttons(self):
-        if self.is_polling:
+        active = bool(getattr(self, "is_polling", False) or getattr(self, "is_auto_detecting", False))
+        if active:
             # Disable start button and change appearance
             self.btn_start.configure(
                 state="disabled",
@@ -2934,10 +2935,10 @@ Ready to poll..."""
             # Enable start button and restore appearance
             self.btn_start.configure(
                 state="normal",
-                fg_color=self.accent_primary,
-                hover_color=self.accent_secondary,
+                fg_color=self.accent_success,
+                hover_color="#059669",
                 text_color="white",
-                border_color=self.accent_glow
+                border_color=self.accent_success
             )
             # Show stop button as disabled
             self.btn_stop.configure(
@@ -2951,9 +2952,9 @@ Ready to poll..."""
                 self.btn_auto_detect.configure(
                     state="normal",
                     fg_color=self.bg_tertiary,
-                    hover_color=self.accent_primary,
-                    text_color=self.text_primary,
-                    border_color=self.bg_card
+                    hover_color=self.accent_success,
+                    text_color="white",
+                    border_color=self.accent_success
                 )
             except Exception:
                 pass
@@ -3060,6 +3061,9 @@ Ready to poll..."""
         # Auto-detect should be minimal (as requested):
         # modpoll COMx -b9600 -pnone -a52
         #
+        # But for scanning we MUST poll once (-1), otherwise modpoll keeps running
+        # and we'd only hit the timeout and never see a response line.
+        #
         # NOTE: We intentionally do NOT add extra flags like -d/-s/-r/-c/-t here.
         cmd = [
             self.modpoll_path,
@@ -3067,6 +3071,7 @@ Ready to poll..."""
             f"-b{baudrate}",
             f"-p{parity}",
             f"-a{slave_address}",
+            "-1",
         ]
 
         # Run it with a short timeout (fast scan)
@@ -3155,6 +3160,10 @@ Ready to poll..."""
             return
 
         self.is_auto_detecting = True
+        try:
+            self.root.after(0, self.update_buttons)
+        except Exception:
+            pass
         self._write_to_terminal("═" * 70, "normal")
         self._write_to_terminal(f"Auto-detect started (ports={len(ports)}, tries_per_port={len(combos)}).", "normal")
         self._write_to_terminal("Scanning... (click STOP to cancel)", "accent")
@@ -3174,7 +3183,7 @@ Ready to poll..."""
                     # Show the exact command being tried (throttle to avoid huge logs)
                     if tried <= 30 or tried % 25 == 0:
                         self._write_to_terminal(
-                            f"Trying: modpoll {port} -b{baud} -p{par} -a{slave_address}",
+                            f"Trying: modpoll {port} -b{baud} -p{par} -a{slave_address} -1",
                             "normal",
                         )
 
@@ -3205,6 +3214,10 @@ Ready to poll..."""
                 was_cancelled = (not self.is_auto_detecting)
                 # Always stop flag when finishing
                 self.is_auto_detecting = False
+                try:
+                    self.update_buttons()
+                except Exception:
+                    pass
 
                 if found:
                     port, baud, par, summary = found
