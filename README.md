@@ -124,34 +124,3 @@ Place `modpoll.exe` at that location. This avoids any dependency on a system-ins
 
 
 
-
-## ModPolling Tool (Windows) 🪟
-
-Modern Windows GUI for quickly testing Modbus devices using the Modpoll utility. Built with Python and Tkinter, with quality-of-life features for serial/TCP, command preview, status indicator, and a Units tab that reads plant data from MySQL.
-
-### Features
-- **GUI for Modpoll**: Start/stop polling without the command line.
-- **Equipment presets**: Auto-applies baudrate, parity, bits, etc.
-- **Command preview**: Live `modpoll` command string updates as you change settings.
-- **Status indicator**: Color feedback for responses and errors.
-- **Units tab**: Pulls unit metadata (Unit ID/Name, Driver/Address, Regulator, IP, COM) from MySQL.
-
-### Modpoll binary
-- The app runs a known `modpoll.exe` rather than whatever may exist in the system PATH. It ensures the binary exists and downloads it if missing.
-- Intention: always use the bundled/known Modpoll binary rather than any other system-installed one [[memory:5703358]].
-
-
-### Usage
-1. **Select equipment** on the left. Preset communication parameters are applied automatically.
-2. In the **Basic** tab, pick a COM port or enter a **Modbus TCP/IP** host:port in the Advanced tab field.
-3. Optionally adjust Advanced settings (data bits, stop bits, start reference, count, type).
-4. Click **Start Polling** to run. Output appears in the log; the circular indicator shows status.
-5. Use **Units → Get units data** to fetch from MySQL. Columns auto-size and support scrolling.
-
-
-### Troubleshooting
-- **Serial port already open**: Stop any service using the COM port (e.g., plant server) and try again.
-- **Port or socket open error / Reply time-out**: Verify wiring/IP/port, parity/baudrate, address, and that the device is reachable.
-
-
-
