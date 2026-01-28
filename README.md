@@ -6,7 +6,7 @@ A modern Windows GUI for quickly polling Modbus devices using the `modpoll` util
 
 ### Highlights 🚀
 - **⚡ One-click polling** over serial (RTU) or TCP
-- **🔎 Auto-Detect** — automatically scan COM ports, baudrates, and parities to find devices
+- **🔎 Auto-Detect** - automatically scan COM ports, baudrates, and parities to find devices
 - **🔧 Equipment presets** auto-fill baud, parity, data/stop bits
 - **🧪 Live command preview** with on-the-fly edits
 - **🟢🟡🔴 Status indicator** with green/yellow/red blink feedback
