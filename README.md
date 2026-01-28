@@ -6,6 +6,7 @@ A modern Windows GUI for quickly polling Modbus devices using the `modpoll` util
 
 ### Highlights 🚀
 - **⚡ One-click polling** over serial (RTU) or TCP
+- **🔎 Auto-Detect** — automatically scan COM ports, baudrates, and parities to find devices
 - **🔧 Equipment presets** auto-fill baud, parity, data/stop bits
 - **🧪 Live command preview** with on-the-fly edits
 - **🟢🟡🔴 Status indicator** with green/yellow/red blink feedback
@@ -32,7 +33,7 @@ Download the latest executable directly from our releases:
 
 **[Download ModPollingTool.exe](https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/ModPollingTool.exe)**
 
-- **File Size**: ~10.6 MB
+- **File Size**: ~30.6 MB
 - **Dependencies**: None (standalone executable)
 
 ## 🚀 Installation
@@ -69,11 +70,23 @@ Download the latest executable directly from our releases:
 - The “Command” field shows exactly what will be passed to `modpoll`.
 - Edit the command inline for advanced scenarios (e.g., adding flags not exposed in the UI). The app will use your edited command when starting polling.
 
+### Auto-Detect 🔎
+Automatically scan for Modbus devices across COM ports, baudrates, and parities:
+1. Enter the **slave address** (-a) in the Basic tab
+2. Click **AUTO DETECT**
+3. The tool scans in this priority order:
+   - 9600 / none → 19200 / none → 9600 / even → 19200 / even → 9600 / odd → 19200 / odd
+4. When a device responds, settings are **auto-applied** to the UI
+5. Click **STOP** to cancel the scan early
+
+Each scan attempt runs: `modpoll COMx -b... -p... -a... -1`
+
 ### Status indicator 🟢🟡🔴
 - The circular indicator blinks while parsing responses:
   - Green: valid responses or non-fatal Modbus exceptions (function/data address/value)
   - Yellow: checksum errors
   - Red: timeouts or port/socket errors
+- The **STOP button turns red** when polling or auto-detect is active
 
 ### Units tab (optional, IWMAC) 🗃️
 - “Get units data” queries the local database for unit details, then auto-populates a table with Unit ID/Name, Driver, Address, IP/COM, Baudrate, Parity.
@@ -109,15 +122,8 @@ Place `modpoll.exe` at that location. This avoids any dependency on a system-ins
 - **COM port missing**: Click Refresh, or type it manually; verify device manager; for virtual ports, ensure the vendor tool created the port.
 
 
-## Development notes 🧑‍💻
-- GUI built with `tkinter` and `ttk`
-- Serial ports via `pyserial` and Windows Registry scan
-- Subprocess runs `modpoll.exe` with `CREATE_NO_WINDOW`, streaming stdout/stderr in real-time
-- Log filtering avoids `modpoll` banners and emphasizes actionable lines
 
 
-## License 📄
-Consider adding a license (e.g., MIT) to clarify usage and redistribution.
 
 ## ModPolling Tool (Windows) 🪟
 
@@ -147,5 +153,18 @@ Modern Windows GUI for quickly testing Modbus devices using the Modpoll utility.
 - **Serial port already open**: Stop any service using the COM port (e.g., plant server) and try again.
 - **Port or socket open error / Reply time-out**: Verify wiring/IP/port, parity/baudrate, address, and that the device is reachable.
 
+
+## Changelog 📋
+
+### v3 (Latest)
+- ✅ Added **Auto-Detect button** for automatic device scanning across COM/baud/parity
+- ✅ Fixed **output buffering** — now updates every 1 second (like CMD terminal)
+- ✅ **"Attempt N"** shown before each poll result
+- ✅ **"Polling slave ..."** shown only once at the top
+- ✅ **Green theme** for START POLLING and AUTO DETECT buttons
+- ✅ **Red STOP button** activates during polling or auto-detect
+- ✅ Improved COM port detection (handles enhanced names like "COM1 - SLV")
+- ✅ Modern dark UI with **CustomTkinter** and glassmorphism styling
+- ✅ Configurable auto-detect timeout (5s) and pause between attempts (0.25s)
 
 
