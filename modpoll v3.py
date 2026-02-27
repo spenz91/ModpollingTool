@@ -12,11 +12,11 @@ import re  # For regex matching
 
 import shlex  # For parsing command line arguments
 import datetime
-import urllib
-import urllib.request
-import urllib.error
-import io
-import time
+#
+# NOTE:
+# Avoid embedding "download an exe from the internet" logic in the GUI binary.
+# That pattern is a common trigger for AV/ML false positives.
+#
 
 # Set CustomTkinter appearance and smooth animations
 ctk.set_appearance_mode("dark")  # Modes: "System" (default), "Dark", "Light"
@@ -66,7 +66,6 @@ class ModpollingTool:
         
         self.modpoll_process = None
         self.is_polling = False
-        self.is_auto_detecting = False
         self.log_queue = queue.Queue()
         # Batched terminal writes (thread-safe queue for real-time output without UI freeze)
         self.terminal_write_queue = queue.Queue()
@@ -76,7 +75,9 @@ class ModpollingTool:
         
         # Units data and filter state
         self.units_rows = []
-        self.hide_no_baudrate = False
+        # Default: show only units that have baudrate (i.e., Modbus-supported rows),
+        # and let the user toggle to "Show All Units".
+        self.hide_no_baudrate = True
         
         # Default modpoll path
         self.modpoll_path = r"C:\iwmac\bin\modpoll.exe"
@@ -647,34 +648,7 @@ class ModpollingTool:
                     self.log_queue.put(('error', f"Failed to create directory {modpoll_dir}: {e}"))
                     return
             # Inform user that modpoll.exe is missing
-            self.log_queue.put(('info', f"modpoll.exe not found. Download it and save to {self.modpoll_path}"))
-
-    def download_modpoll(self):
-        """
-        Download modpoll.exe from the specified URL.
-        """
-        url = "https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe"
-        
-        def download_thread():
-            try:
-                self.log_queue.put(('info', "Downloading modpoll.exe..."))
-                
-                # Download the file
-                urllib.request.urlretrieve(url, self.modpoll_path)
-                
-                self.log_queue.put(('info', f"Successfully downloaded modpoll.exe to {self.modpoll_path}"))
-                    
-            except urllib.error.URLError as e:
-                error_msg = f"Failed to download modpoll.exe: {e}"
-                self.log_queue.put(('error', error_msg))
-                messagebox.showerror("Download Error", error_msg)
-            except Exception as e:
-                error_msg = f"Unexpected error downloading modpoll.exe: {e}"
-                self.log_queue.put(('error', error_msg))
-                messagebox.showerror("Download Error", error_msg)
-        
-        # Run download in a separate thread to avoid blocking the UI
-        threading.Thread(target=download_thread, daemon=True).start()
+            self.log_queue.put(('info', f"modpoll.exe not found. Please download it and save to: {self.modpoll_path}"))
 
     def create_widgets(self):
         # Configure grid layout for root
@@ -687,9 +661,10 @@ class ModpollingTool:
         self.main_frame = main_frame
         main_frame.grid(row=0, column=0, sticky="NSEW", padx=10, pady=10)
         main_frame.grid_rowconfigure(0, weight=1)
-        main_frame.grid_columnconfigure(0, weight=1)
-        main_frame.grid_columnconfigure(1, weight=2)
-        main_frame.grid_columnconfigure(2, weight=2)
+        # Layout: keep Configuration (middle) smaller + give Terminal more space
+        main_frame.grid_columnconfigure(0, weight=0, minsize=340)    # Equipment (slightly narrower)
+        main_frame.grid_columnconfigure(1, weight=0, minsize=520)    # Configuration (fixed-ish width)
+        main_frame.grid_columnconfigure(2, weight=4)                 # Terminal (takes a bit more space)
 
         # Equipment Frame (Column 0) - Modern card style
         self.frame_equipment = ctk.CTkFrame(
@@ -699,6 +674,12 @@ class ModpollingTool:
             border_width=1,
             border_color=self.bg_tertiary
         )
+        # Keep the left panel from stretching too wide
+        try:
+            self.frame_equipment.configure(width=340)
+            self.frame_equipment.grid_propagate(False)
+        except Exception:
+            pass
         self.frame_equipment.grid(row=0, column=0, sticky="NSEW", padx=(0, 10))
         self.frame_equipment.grid_rowconfigure(1, weight=1)
         self.frame_equipment.grid_columnconfigure(0, weight=1)
@@ -834,7 +815,14 @@ class ModpollingTool:
             border_width=1,
             border_color=self.bg_tertiary
         )
-        self.frame_settings.grid(row=0, column=1, sticky="NSEW", padx=(0, 10))
+        # Keep the middle panel from stretching too wide
+        try:
+            self.frame_settings.configure(width=520)
+            self.frame_settings.grid_propagate(False)
+        except Exception:
+            pass
+        # Slightly reduce the gap so the Terminal gets more width
+        self.frame_settings.grid(row=0, column=1, sticky="NSEW", padx=(0, 6))
         self.frame_settings.grid_rowconfigure(1, weight=1)
         self.frame_settings.grid_columnconfigure(0, weight=1)
         
@@ -1182,33 +1170,16 @@ class ModpollingTool:
             text="▶  START POLLING",
             command=self.start_polling,
             font=("Segoe UI", 14, "bold"),
-            fg_color=self.accent_success,
-            hover_color="#059669",
+            fg_color=self.accent_primary,
+            hover_color=self.accent_secondary,
             text_color="white",
             corner_radius=12,
             height=50,
             width=200,
             border_width=2,
-            border_color=self.accent_success
+            border_color=self.accent_glow
         )
         self.btn_start.grid(row=0, column=0, padx=10, pady=5, sticky="e")
-
-        # Auto Detect Button - fast scan COM/baud/parity
-        self.btn_auto_detect = ctk.CTkButton(
-            btn_frame,
-            text="🔎  AUTO DETECT",
-            command=self.start_auto_detect,
-            font=("Segoe UI", 14, "bold"),
-            fg_color=self.bg_tertiary,          # "outlined" feel in idle state
-            hover_color=self.accent_success,    # turns green on hover
-            text_color="white",
-            corner_radius=12,
-            height=50,
-            width=200,
-            border_width=1,
-            border_color=self.accent_success,
-        )
-        self.btn_auto_detect.grid(row=1, column=0, padx=10, pady=(5, 0), sticky="e")
 
         # Stop Polling Button - Modern muted style
         self.btn_stop = ctk.CTkButton(
@@ -1227,9 +1198,6 @@ class ModpollingTool:
             state="normal"
         )
         self.btn_stop.grid(row=0, column=1, padx=10, pady=5, sticky="e")
-
-        # Align second row height
-        btn_frame.grid_rowconfigure(1, weight=0)
 
         # Store the frame background color
         self.frame_bg_color = self.bg_primary
@@ -1287,7 +1255,9 @@ class ModpollingTool:
         # Toggle button to hide/show units without baudrate
         self.btn_toggle_baud_filter = ctk.CTkButton(
             units_controls,
-            text="🔍  Show All Units",
+            # Button label describes the *action* (what happens when you click it).
+            # When we're currently hiding rows without baudrate, user can click to show all.
+            text=("🔍  Show All Units" if self.hide_no_baudrate else "✅  Modbus-Supported"),
             command=self.toggle_hide_no_baudrate,
             width=180,
             height=45,
@@ -1411,67 +1381,17 @@ class ModpollingTool:
         units_v_scrollbar = ttk.Scrollbar(units_table_frame, orient="vertical", command=self.units_tree.yview)
         units_h_scrollbar = ttk.Scrollbar(units_table_frame, orient="horizontal", command=self.units_tree.xview)
         
-        # ---- Column separator lines (vertical dividers) ----
-        # Draw vertical lines between columns using the same white as the frame.
-        # (Slightly inset so they match the table border.)
+        # Keep a no-op separator updater to avoid geometry glitches after data refresh.
+        # Native Treeview separators are more stable than custom overlay lines.
         self.units_column_separators = []
-        for _ in range(len(columns) - 1):
-            sep = tk.Frame(units_table_frame, bg=self.text_primary, width=1)
-            sep.place_forget()
-            self.units_column_separators.append(sep)
 
         def update_units_column_separators():
-            """Position vertical separators at current column boundaries (handles horizontal scroll)."""
-            try:
-                tree = self.units_tree
-                # Avoid heavy work when tab isn't visible yet
-                if not tree.winfo_ismapped():
-                    return
-
-                tree_x = tree.winfo_x()
-                tree_y = tree.winfo_y()
-                tree_w = tree.winfo_width()
-                tree_h = tree.winfo_height()
-
-                # Separator vertical span: match the Treeview widget area (no padding/overlap)
-                y_start = tree_y + 1
-                y_end = tree_y + tree_h - 1
-                sep_h = max(0, y_end - y_start)
-
-                # Convert xview fraction to pixel scroll offset
-                total_cols_width = 0
-                col_widths_now = []
-                for c in columns:
-                    w = int(tree.column(c, "width"))
-                    col_widths_now.append(w)
-                    total_cols_width += w
-
-                x0 = tree.xview()[0] if tree.xview() else 0.0
-                scroll_px = int(total_cols_width * x0)
-
-                running = 0
-                for i in range(len(columns) - 1):
-                    running += col_widths_now[i]
-                    boundary_x = tree_x + (running - scroll_px)
-
-                    sep = self.units_column_separators[i]
-                    # Only show if within visible tree area
-                    if boundary_x <= tree_x or boundary_x >= (tree_x + tree_w):
-                        sep.place_forget()
-                    else:
-                        # Start/stop exactly within the Treeview area
-                        sep.place(x=boundary_x, y=y_start, height=sep_h)
-            except Exception:
-                # Best-effort only
-                pass
+            return
 
         self.update_units_column_separators = update_units_column_separators
-        # One fast update after the Units tab is rendered
-        self.root.after_idle(update_units_column_separators)
 
         def _xscroll_proxy(first, last):
             units_h_scrollbar.set(first, last)
-            update_units_column_separators()
 
         # Configure the treeview to work with both scrollbars (+ keep separators synced)
         self.units_tree.configure(yscrollcommand=units_v_scrollbar.set, xscrollcommand=_xscroll_proxy)
@@ -1591,41 +1511,72 @@ class ModpollingTool:
         # Determine best monospace font available
         mono_font = self.get_best_monospace_font()
         
-        # Log Text - Modern terminal textbox (optimized for fast polling)
-        self.txt_log = ctk.CTkTextbox(
+        # Terminal (highest responsiveness): line-based Listbox with per-line colors
+        # This is significantly faster than a Text widget for high-frequency appends.
+        self.terminal_container = ctk.CTkFrame(
             self.frame_log,
-            width=600,
-            height=500,
             corner_radius=12,
             border_width=2,
             border_color=self.bg_tertiary,
             fg_color=self.bg_primary,
-            text_color=self.accent_glow,
-            font=(mono_font, 10),
-            wrap="none",
-            activate_scrollbars=True,
-            scrollbar_button_color=self.accent_primary,
-            scrollbar_button_hover_color=self.accent_secondary
         )
-        self.txt_log.grid(column=0, row=2, sticky="NSEW", padx=15, pady=(0, 15))
-        
-        # Performance optimization: Limit terminal to last 3000 lines to prevent memory issues
+        self.terminal_container.grid(column=0, row=2, sticky="NSEW", padx=15, pady=(0, 15))
+        self.terminal_container.grid_rowconfigure(0, weight=1)
+        self.terminal_container.grid_columnconfigure(0, weight=1)
+
+        self.txt_log = tk.Listbox(
+            self.terminal_container,
+            bg=self.bg_primary,
+            fg=self.text_primary,
+            selectbackground=self.bg_card,
+            selectforeground=self.text_primary,
+            highlightthickness=0,
+            bd=0,
+            relief="flat",
+            font=(mono_font, 10),
+        )
+        self.txt_log.grid(row=0, column=0, sticky="NSEW", padx=(8, 0), pady=8)
+
+        self.terminal_scrollbar = ctk.CTkScrollbar(
+            self.terminal_container,
+            orientation="vertical",
+            command=self.txt_log.yview,
+            button_color=self.accent_primary,
+            button_hover_color=self.accent_secondary,
+        )
+        self.terminal_scrollbar.grid(row=0, column=1, sticky="NS", padx=(6, 8), pady=8)
+        self.txt_log.configure(yscrollcommand=self.terminal_scrollbar.set)
+
+        # Performance optimization: keep only last N lines
         self.terminal_max_lines = 3000
-        
-        # Store the internal text widget for tag configuration
-        try:
-            # CustomTkinter's textbox internal widget needs special handling
-            self.txt_log._textbox.tag_configure('error', foreground='#FF4444', font=(mono_font, 10))
-            self.txt_log._textbox.tag_configure('info', foreground='#10B981', font=(mono_font, 10))
-            self.txt_log._textbox.tag_configure('normal', foreground=self.text_primary)
-            # Attempts: smaller + purple (same vibe as Configuration header)
-            self.txt_log._textbox.tag_configure('attempt', foreground=self.accent_glow, font=(mono_font, 9))
-            # Accent: purple (used for welcome/equipment/config lines)
-            self.txt_log._textbox.tag_configure('accent', foreground=self.accent_glow, font=(mono_font, 10))
-            # Successful device values, e.g. "[100]: 43"
-            self.txt_log._textbox.tag_configure('response_ok', foreground=self.accent_success, font=(mono_font, 10))
-        except:
-            pass
+        self._terminal_line_count_est = 0
+
+        # Tag colors (whole-line only; fastest possible)
+        self.terminal_tag_colors = {
+            "normal": self.text_primary,
+            "error": "#FF4444",
+            "info": "#10B981",
+            "warning": self.accent_warning,
+            "attempt": self.text_primary,
+            "accent": self.accent_glow,
+            "response_ok": self.accent_success,
+        }
+
+        # Copy selected lines with Ctrl+C
+        def _copy_terminal_selection(_event=None):
+            try:
+                sel = self.txt_log.curselection()
+                if not sel:
+                    return "break"
+                text = "\n".join(self.txt_log.get(i) for i in sel)
+                self.root.clipboard_clear()
+                self.root.clipboard_append(text)
+            except Exception:
+                pass
+            return "break"
+
+        self.txt_log.bind("<Control-c>", _copy_terminal_selection)
+        self.txt_log.bind("<Control-C>", _copy_terminal_selection)
 
         # Refresh COM ports
         self.refresh_comports()
@@ -1659,12 +1610,12 @@ class ModpollingTool:
         )
         footer_label_left.pack(side='left', padx=20, pady=12)
 
-        # Download link - Modern button
+        # Keep footer links informational only (avoid direct executable download links).
         footer_label_center = ctk.CTkButton(
             footer_frame,
-            text="⬇️  Download modpoll.exe",
+            text="🌐  Project Releases",
             command=lambda: webbrowser.open(
-                "https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe"
+                "https://github.com/spenz91/ModpollingTool/releases"
             ),
             fg_color="transparent",
             hover_color=self.bg_card,
@@ -2242,16 +2193,10 @@ class ModpollingTool:
     
     def display_welcome_message(self):
         """Display a welcome message in the log"""
-        # Build a clean centered ASCII banner (fixed width so the "square" isn't buggy)
-        inner_width = 70  # characters between the borders
-        title = "Modpolling Tool"
-        subtitle = "Professional Modbus Testing Suite"
-        banner_box = "\n".join([
-            "╔" + ("═" * inner_width) + "╗",
-            "║" + title.center(inner_width) + "║",
-            "║" + subtitle.center(inner_width) + "║",
-            "╚" + ("═" * inner_width) + "╝",
-        ])
+        # Draw once at startup; width is based on terminal widget width
+        if getattr(self, "_welcome_drawn", False):
+            return
+        self._welcome_drawn = True
 
         welcome_body = """Welcome to the ModPolling Tool!
 
@@ -2268,43 +2213,59 @@ Status Indicator:
 
 Ready to poll..."""
 
-        self.txt_log.configure(state="normal")
-        t = self.txt_log._textbox
+        def _draw():
+            # Compute banner width in characters to match terminal width (Listbox = no wrap)
+            try:
+                self.root.update_idletasks()
+            except Exception:
+                pass
 
-        # Insert banner box and center it (white)
-        start = t.index("end-1c")
-        t.insert("end", banner_box + "\n\n")
-        end = t.index("end-1c")
-        t.tag_add("welcome_banner", start, end)
-        t.tag_configure("welcome_banner", justify="center", foreground=self.text_primary)
+            try:
+                mono_font = self.get_best_monospace_font()
+                f = tkfont.Font(font=(mono_font, 10))
+                char_px = max(7, f.measure("0"))
+                w_px = int(getattr(self.txt_log, "winfo_width", lambda: 0)())
+                # subtract a little padding so we don't hit the scrollbar edge
+                max_chars = max(50, int(max(0, w_px - 24) / char_px))
+                inner_width = max(40, min(100, max_chars - 2))
+            except Exception:
+                inner_width = 70
 
-        # Insert the rest (white)
-        body_start = t.index("end-1c")
-        t.insert("end", welcome_body + "\n")
-        body_end = t.index("end-1c")
-        t.tag_add("welcome_body", body_start, body_end)
-        t.tag_configure("welcome_body", foreground=self.text_primary)
+            title = "Modpolling Tool"
+            subtitle = "Professional Modbus Testing Suite"
+            banner_box = "\n".join([
+                "╔" + ("═" * inner_width) + "╗",
+                "║" + title.center(inner_width) + "║",
+                "║" + subtitle.center(inner_width) + "║",
+                "╚" + ("═" * inner_width) + "╝",
+            ])
 
-        # Colorize status legend words only (Green/Yellow/Red)
+            # Listbox terminal: insert banner + body line-by-line (whole-line colors only)
+            try:
+                self.txt_log.delete(0, "end")
+            except Exception:
+                pass
+
+            for line in banner_box.splitlines():
+                self._write_to_terminal(line, "normal")
+            self._write_to_terminal("", "normal")
+
+            for line in welcome_body.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("Green"):
+                    self._write_to_terminal(line, "response_ok")
+                elif stripped.startswith("Yellow"):
+                    self._write_to_terminal(line, "warning")
+                elif stripped.startswith("Red"):
+                    self._write_to_terminal(line, "error")
+                else:
+                    self._write_to_terminal(line, "normal")
+
+        # Let geometry settle so terminal width is correct
         try:
-            color_map = {
-                "Green": ("welcome_green", self.accent_success),
-                "Yellow": ("welcome_yellow", self.accent_warning),
-                "Red": ("welcome_red", self.accent_error),
-            }
-
-            for word, (tag_name, color) in color_map.items():
-                # Find the first occurrence inside the welcome body
-                idx = t.search(word, body_start, stopindex=body_end)
-                if idx:
-                    end_idx = f"{idx}+{len(word)}c"
-                    t.tag_add(tag_name, idx, end_idx)
-                    t.tag_configure(tag_name, foreground=color)
-                    # Ensure colored tags win over the white body tag
-                    t.tag_raise(tag_name, "welcome_body")
+            self.root.after(50, _draw)
         except Exception:
-            pass
-        self.txt_log.configure(state="disabled")
+            _draw()
     
     def select_advanced_tab(self):
         """Switch to the Advanced tab in the settings notebook."""
@@ -2404,6 +2365,9 @@ Ready to poll..."""
             self.log_queue.put(('info', "Polling is already running."))
             return
 
+        # Show "Polling slave ..." banner only once per polling session (not every attempt/run)
+        self._polling_slave_banner_shown = False
+
         # Extra safety: if a process is still alive, don't start another
         try:
             if self.modpoll_process and self.modpoll_process.poll() is None:
@@ -2417,16 +2381,13 @@ Ready to poll..."""
         # Check if modpoll.exe exists before starting
         if not os.path.exists(self.modpoll_path):
             self.log_queue.put(('error', f"modpoll.exe not found at {self.modpoll_path}."))
-            open_dl = messagebox.askyesno(
+            messagebox.showwarning(
                 "modpoll.exe missing",
                 (
                     "modpoll.exe was not found.\n\n"
-                    "Open the official download now?\n\n"
-                    f"After downloading, save it to:\n{self.modpoll_path}"
+                    f"Please download it manually and save it to:\n{self.modpoll_path}"
                 ),
             )
-            if open_dl:
-                webbrowser.open("https://github.com/spenz91/ModpollingTool/releases/download/modpollv2/modpoll.exe")
             return
 
         com_port_enhanced = self.cmb_comport.get().strip()
@@ -2578,15 +2539,7 @@ Ready to poll..."""
             self._write_to_terminal("Protocol opened successfully.", 'normal')
 
             # Log the command (mask the full path to show just 'modpoll')
-            # IMPORTANT: Many Windows builds of modpoll.exe buffer output when stdout is piped,
-            # causing updates to appear in bursts in the GUI. To guarantee 1-second updates
-            # (same behavior as running in a real CMD console), we run modpoll in single-shot
-            # mode (-1) and loop in Python once per second.
-            #
-            # This makes each poll a short-lived process; output is always flushed on exit.
-            single_shot_arguments = [a for a in arguments if str(a).strip() != "-1"] + ["-1"]
-
-            masked_cmd = ['modpoll'] + single_shot_arguments
+            masked_cmd = ['modpoll'] + arguments
             # Show these in white (normal) for readability
             self._write_to_terminal(f"Running command: {' '.join(masked_cmd)}", 'normal')
             self._write_to_terminal(f"Parameters: COM={com_port}, Baud={baudrate}, Parity={parity}, DataBits={databits}, StopBits={stopbits}, Addr={adresse}, Ref={start_reference}, Count={num_registers}, Type={register_data_type}", 'normal')
@@ -2596,65 +2549,97 @@ Ready to poll..."""
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             creationflags = subprocess.CREATE_NO_WINDOW
 
-            # Replace cmd with the single-shot version.
-            cmd = [modpoll_path] + single_shot_arguments
+            # NOTE:
+            # When modpoll.exe stdout is piped (stdout=PIPE), it can become block-buffered on Windows.
+            # That causes "nothing for a few seconds, then a burst" even though modpoll is polling every second.
+            #
+            # Fix: force one-shot mode (-1) and run it once per second ourselves.
+            # This guarantees each run flushes output when the process exits, giving true "1s cadence" in the GUI.
+            poll_interval_s = 1.0
 
-            # Loop once per second while polling is active.
-            # NOTE: We print "Polling slave ..." once at the top (like modpoll),
-            # and we print "Attempt N" before each poll so output order is stable:
-            #
-            # Attempt 1
-            # Polling slave (ctrl-c to stop) ...
-            # [15]: -1 - Device is responding
-            #
-            # modpoll's own "Polling slave ..." line is skipped in read_stream().
+            # Ensure one-shot flag is present (modpoll: "-1 Poll only once, otherwise poll every second")
+            args_oneshot = list(arguments)
+            if "-1" not in args_oneshot:
+                args_oneshot.append("-1")
+
+            env = dict(os.environ)
+            env["PYTHONUNBUFFERED"] = "1"
+
+            import time as _time
+            import io as _io
+
             while self.is_polling:
-                loop_start = time.perf_counter()
+                t0 = _time.perf_counter()
 
+                # In one-shot mode, attempts are driven by our loop, not by parsed output cycle detection.
+                self._oneshot_mode = True
+                if not self.is_polling:
+                    break
+                self._increment_attempt(source="manual")
+                self.last_seen_reference = None
+
+                if not self.is_polling:
+                    break
+                cmd = [modpoll_path] + args_oneshot
+
+                self.modpoll_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    shell=False,
+                    startupinfo=startupinfo,
+                    creationflags=creationflags,
+                    env=env,
+                )
+
+                out = ""
                 try:
-                    # One attempt per second (stable, predictable)
-                    self._increment_attempt()
-                    if self.poll_attempt_counter == 1:
-                        self._write_to_terminal("Polling slave (ctrl-c to stop) ...", "normal")
-
-                    self.modpoll_process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,  # merge for ordered output
-                        text=True,
-                        shell=False,
-                        startupinfo=startupinfo,
-                        creationflags=creationflags,
-                    )
-
-                    # Wait for this single poll to finish and grab all output.
-                    out, _ = self.modpoll_process.communicate(timeout=15)
-                    if out:
-                        # Reuse existing parser by feeding a file-like object.
-                        self.read_stream(io.StringIO(out))
+                    out, _ = self.modpoll_process.communicate(timeout=10)
                 except subprocess.TimeoutExpired:
-                    try:
-                        self.modpoll_process.terminate()
-                    except Exception:
-                        pass
                     try:
                         self.modpoll_process.kill()
                     except Exception:
                         pass
-                    self._write_to_terminal("Poll timed out (modpoll did not exit).", "error")
-                    self.root.after_idle(lambda: self.trigger_status_indicator('red'))
+                    try:
+                        out, _ = self.modpoll_process.communicate(timeout=1)
+                    except Exception:
+                        out = ""
+                    self._write_to_terminal("Time-out - No response from device", 'error')
+                    try:
+                        self.root.after_idle(lambda: self.trigger_status_indicator('red'))
+                    except Exception:
+                        pass
                 finally:
                     self.modpoll_process = None
 
-                # Aim for ~1s cadence.
-                elapsed = time.perf_counter() - loop_start
-                remaining = 1.0 - elapsed
-                if remaining > 0:
-                    time.sleep(remaining)
+                if out:
+                    # Feed output through the same parser used for streaming mode
+                    self.read_stream(_io.StringIO(out))
+                    # read_stream() may request an immediate stop on fatal errors.
+                    if not self.is_polling:
+                        break
+
+                # Stop immediately if polling was turned off by parser/error handling.
+                if not self.is_polling:
+                    break
+
+                # Maintain ~1s cadence between poll starts
+                dt = _time.perf_counter() - t0
+                sleep_s = poll_interval_s - dt
+                if sleep_s > 0:
+                    # Interruptible sleep so Stop reacts immediately.
+                    sleep_until = _time.perf_counter() + sleep_s
+                    while self.is_polling:
+                        remaining = sleep_until - _time.perf_counter()
+                        if remaining <= 0:
+                            break
+                        _time.sleep(min(0.05, remaining))
 
         except Exception as e:
             self._write_to_terminal(f"Error running Modpoll: {str(e)}", 'error')
         finally:
+            self._oneshot_mode = False
             self.is_polling = False
             try:
                 self.root.after(0, self.update_buttons)
@@ -2662,37 +2647,56 @@ Ready to poll..."""
                 pass
             # (Removed) Polling finished.
 
-    def _increment_attempt(self):
+    def _increment_attempt(self, source="output"):
+        """
+        Increment and print attempt counter.
+
+        - source="manual": driven by our one-shot polling loop
+        - source="output": driven by parsing modpoll's continuous output (streaming mode)
+        """
+        try:
+            if getattr(self, "_oneshot_mode", False) and source == "output":
+                return
+        except Exception:
+            pass
         self.poll_attempt_counter += 1
         # Log every attempt in white (direct to UI like CMD)
         self._write_to_terminal(f"Attempt {self.poll_attempt_counter}", 'normal')
 
     def _write_to_terminal(self, message, tag=None):
         """Queue terminal write (fast + non-blocking UI)."""
-        self.terminal_write_queue.put((message, tag))
+        try:
+            msg = "" if message is None else str(message)
+        except Exception:
+            msg = ""
+
+        # Listbox terminal is line-based: split multi-line messages
+        msg = msg.replace("\r\n", "\n").replace("\r", "\n")
+        lines = msg.split("\n")
+        for line in lines:
+            # Keep empty lines (for spacing)
+            self.terminal_write_queue.put((line, tag))
         if not self.terminal_flush_scheduled:
             self.terminal_flush_scheduled = True
             # Kick an immediate flush; subsequent flushes are throttled inside _flush_terminal_writes
             self.root.after(0, self._flush_terminal_writes)
     
     def _flush_terminal_writes(self):
-        """Flush queued terminal writes without lag (few inserts, time-sliced)."""
+        """Flush queued terminal writes (Listbox) without lag (time-sliced)."""
         self.terminal_flush_scheduled = False
-        t = None
         try:
             import time as _time
 
-            t = self.txt_log._textbox
+            lb = self.txt_log
             # Only auto-scroll if user is already at the bottom
             try:
-                at_bottom = (t.yview()[1] >= 0.995)
+                at_bottom = (lb.yview()[1] >= 0.995)
             except Exception:
                 at_bottom = True
 
-            # Drain some items within a small time budget (keeps UI responsive)
             start = _time.perf_counter()
-            budget_s = 0.012  # ~12ms per tick
-            max_items = 500   # hard cap per tick
+            budget_s = 0.010  # ~10ms per tick
+            max_items = 800   # hard cap per tick
             items = []
 
             while len(items) < max_items and (_time.perf_counter() - start) < budget_s:
@@ -2705,58 +2709,36 @@ Ready to poll..."""
             if not items:
                 return
 
-            self.txt_log.configure(state="normal")
+            start_index = lb.size()
+            # Insert all lines at once (fast)
+            lb.insert("end", *[m for (m, _t) in items])
 
-            # Group consecutive messages by tag so we insert big chunks (MUCH faster)
-            def _insert_chunk(chunk_text: str, chunk_tag):
-                if not chunk_text:
-                    return
-                if chunk_tag:
-                    t.insert("end", chunk_text, chunk_tag)
-                else:
-                    t.insert("end", chunk_text)
+            # Apply colors only for non-default tags (per-line)
+            default_fg = self.text_primary
+            tag_colors = getattr(self, "terminal_tag_colors", {}) or {}
+            for i, (_m, tag) in enumerate(items):
+                if not tag:
+                    continue
+                color = tag_colors.get(tag, default_fg)
+                if color != default_fg:
+                    try:
+                        lb.itemconfig(start_index + i, fg=color)
+                    except Exception:
+                        pass
 
-            cur_tag = items[0][1]
-            buf = []
-            inserted_lines = 0
-            for msg, tag in items:
-                if tag != cur_tag:
-                    _insert_chunk("".join(buf), cur_tag)
-                    buf = []
-                    cur_tag = tag
-                buf.append(f"{msg}\n")
-                inserted_lines += 1
-            _insert_chunk("".join(buf), cur_tag)
-
-            # Trim occasionally (avoid expensive line counting every tick)
+            # Trim old lines if needed
             try:
-                if not hasattr(self, "_terminal_line_count_est") or self._terminal_line_count_est is None:
-                    self._terminal_line_count_est = int(t.index("end-1c").split(".")[0])
-                else:
-                    self._terminal_line_count_est += inserted_lines
-
-                if self._terminal_line_count_est > (self.terminal_max_lines + 200):
-                    line_count = int(t.index("end-1c").split(".")[0])
-                    if line_count > self.terminal_max_lines:
-                        lines_to_delete = line_count - self.terminal_max_lines
-                        t.delete("1.0", f"{lines_to_delete + 1}.0")
-                        self._terminal_line_count_est = self.terminal_max_lines
-                    else:
-                        self._terminal_line_count_est = line_count
+                sz = lb.size()
+                if sz > self.terminal_max_lines:
+                    delete_n = sz - self.terminal_max_lines
+                    lb.delete(0, delete_n - 1)
             except Exception:
-                # If anything goes wrong, skip trimming this tick
                 pass
 
             if at_bottom:
-                t.see("end")
+                lb.see("end")
 
         finally:
-            try:
-                if t is not None:
-                    self.txt_log.configure(state="disabled")
-            except Exception:
-                pass
-
             # If more output is pending, schedule next flush at ~60fps
             try:
                 if not self.terminal_write_queue.empty():
@@ -2778,9 +2760,18 @@ Ready to poll..."""
 
                 lower_line = line.lower()
 
-                # Skip any polling-loop banner from modpoll itself.
-                # We print our own single "Polling slave ..." line at the top.
+                # "Polling slave ..." banner:
+                # - show it ONCE when polling starts (some builds print it every run)
+                # - skip subsequent occurrences so the log stays clean
                 if "polling slave" in lower_line:
+                    try:
+                        already = bool(getattr(self, "_polling_slave_banner_shown", False))
+                    except Exception:
+                        already = False
+                    if already:
+                        continue
+                    self._polling_slave_banner_shown = True
+                    self._write_to_terminal("Polling slave ...", 'normal')
                     continue
 
                 # Skip modpoll header and copyright information
@@ -2791,13 +2782,14 @@ Ready to poll..."""
                 ]):
                     continue
 
-                # Skip "Protocol opened successfully" (we already display it immediately after configuration)
+                # Skip "Protocol opened successfully" (we already display it immediately after configuration).
+                # Do not set GREEN here: a port opening does not mean the slave actually responded.
                 if "protocol opened successfully" in lower_line:
-                    self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
 
                 # Handle time-outs (Reply / Send)
-                if "time-out!" in lower_line:
+                if "time-out" in lower_line or "timeout" in lower_line:
+                    self._increment_attempt()
                     if "send time-out!" in lower_line:
                         self._write_to_terminal("Send time-out! - No response from device", 'error')
                     else:
@@ -2809,7 +2801,9 @@ Ready to poll..."""
                 if "serial port already open" in lower_line:
                     self._write_to_terminal("Port already open - Stop plant server first", 'error')
                     self.root.after_idle(lambda: self.trigger_status_indicator('red'))
-                    continue
+                    # Fatal in one-shot loop: stop immediately so no next attempt is started.
+                    self.is_polling = False
+                    return
 
                 # Handle "port or socket open error!"
                 if "port or socket open error!" in lower_line:
@@ -2829,18 +2823,21 @@ Ready to poll..."""
 
                 # Handle "illegal function exception response!"
                 if "illegal function exception response!" in lower_line:
+                    self._increment_attempt()
                     self._write_to_terminal("Illegal Function Exception Response!", 'info')
                     self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
 
                 # Handle "illegal data address exception response!"
                 if "illegal data address exception response!" in lower_line:
+                    self._increment_attempt()
                     self._write_to_terminal("Illegal Data Address Exception Response! - Device is responding", 'info')
                     self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
 
                 # Handle "illegal data value exception response!"
                 if "illegal data value exception response!" in lower_line:
+                    self._increment_attempt()
                     self._write_to_terminal("Illegal Data Value Exception Response!", 'info')
                     self.root.after_idle(lambda: self.trigger_status_indicator('green'))
                     continue
@@ -2862,6 +2859,8 @@ Ready to poll..."""
                         ref_num = ref_match.group(1)
                         # Detect start of a new polling cycle: same reference appears again
                         # (works even if user changed -r, since we track what we actually see)
+                        if self.last_seen_reference is not None and ref_num == self.last_seen_reference:
+                            self._increment_attempt()
                         self.last_seen_reference = ref_num
                     self._write_to_terminal(f"{line} - Device is responding", 'response_ok')
                     # Throttle status updates: only update once per second for fast responses
@@ -2883,30 +2882,46 @@ Ready to poll..."""
                 pass
 
     def stop_polling(self):
-        # Stop auto-detect if running
-        self.is_auto_detecting = False
+        # Request stop immediately, even if we're between one-shot subprocess runs.
+        was_polling = bool(self.is_polling)
+        self.is_polling = False
+        self.update_buttons()
 
-        if self.modpoll_process and self.modpoll_process.poll() is None:
-            try:
-                self.modpoll_process.terminate()
-                self.modpoll_process.wait(timeout=5)
-                # Show in white
-                self._write_to_terminal("Polling stopped.", 'normal')
-            except subprocess.TimeoutExpired:
-                self.modpoll_process.kill()
-                self._write_to_terminal("Polling forcefully stopped.", 'info')
-            except Exception as e:
-                self._write_to_terminal(f"Error stopping polling: {str(e)}", 'error')
-            finally:
-                self.modpoll_process = None
-                self.is_polling = False
-                self.update_buttons()
+        proc = self.modpoll_process
+        if proc and proc.poll() is None:
+            self._write_to_terminal("Polling stopped.", 'normal')
+
+            def _terminate_process(p):
+                try:
+                    p.terminate()
+                    try:
+                        p.wait(timeout=0.5)
+                    except subprocess.TimeoutExpired:
+                        p.kill()
+                        try:
+                            p.wait(timeout=0.5)
+                        except Exception:
+                            pass
+                except Exception as e:
+                    self._write_to_terminal(f"Error stopping polling: {str(e)}", 'error')
+                finally:
+                    try:
+                        if self.modpoll_process is p:
+                            self.modpoll_process = None
+                    except Exception:
+                        self.modpoll_process = None
+
+            threading.Thread(target=_terminate_process, args=(proc,), daemon=True).start()
         else:
-            self.log_queue.put(('info', "No polling process to stop."))
+            # No active subprocess right now (common between one-shot attempts) - still honor stop.
+            self.modpoll_process = None
+            if was_polling:
+                self._write_to_terminal("Polling stopped.", 'normal')
+            else:
+                self.log_queue.put(('info', "No polling process to stop."))
 
     def update_buttons(self):
-        active = bool(getattr(self, "is_polling", False) or getattr(self, "is_auto_detecting", False))
-        if active:
+        if self.is_polling:
             # Disable start button and change appearance
             self.btn_start.configure(
                 state="disabled",
@@ -2922,23 +2937,14 @@ Ready to poll..."""
                 text_color="white",
                 border_color=self.accent_error
             )
-            try:
-                self.btn_auto_detect.configure(
-                    state="disabled",
-                    fg_color=self.bg_tertiary,
-                    text_color=self.text_secondary,
-                    border_color=self.bg_tertiary
-                )
-            except Exception:
-                pass
         else:
             # Enable start button and restore appearance
             self.btn_start.configure(
                 state="normal",
-                fg_color=self.accent_success,
-                hover_color="#059669",
+                fg_color=self.accent_primary,
+                hover_color=self.accent_secondary,
                 text_color="white",
-                border_color=self.accent_success
+                border_color=self.accent_glow
             )
             # Show stop button as disabled
             self.btn_stop.configure(
@@ -2948,355 +2954,15 @@ Ready to poll..."""
                 text_color=self.text_secondary,
                 border_color=self.bg_tertiary
             )
-            try:
-                self.btn_auto_detect.configure(
-                    state="normal",
-                    fg_color=self.bg_tertiary,
-                    hover_color=self.accent_success,
-                    text_color="white",
-                    border_color=self.accent_success
-                )
-            except Exception:
-                pass
-
-    def _auto_detect_get_ports(self):
-        """Get ports to scan (from combobox values, plus current selection if typed)."""
-        ports = []
-        try:
-            vals = self.cmb_comport.cget("values") or []
-            for v in vals:
-                s = str(v).strip()
-                if not s:
-                    continue
-                # Values can be enhanced names like "COM1 - SLV" → extract real COMx
-                s = self.extract_com_port_from_enhanced_name(s)
-                if s:
-                    ports.append(str(s).strip())
-        except Exception:
-            pass
-
-        # Include what user typed/selected (may not be in values list)
-        try:
-            cur = self.cmb_comport.get().strip()
-            cur = self.extract_com_port_from_enhanced_name(cur)
-            if cur:
-                ports.append(cur)
-        except Exception:
-            pass
-
-        # Normalize, de-dup
-        seen = set()
-        out = []
-        for p in ports:
-            pp = p.strip()
-            if not pp:
-                continue
-            key = pp.upper()
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(pp)
-        return out
-
-    def _auto_detect_get_baudrates(self):
-        """
-        Baudrates to scan.
-        Priority: 9600, 19200 first (then current if different, then the rest).
-        """
-        priority = ["9600", "19200"]
-        default = ["2400", "4800", "38400", "57600", "115200"]
-
-        cur = ""
-        try:
-            cur = str(self.cmb_baudrate.get()).strip()
-        except Exception:
-            cur = ""
-
-        out = []
-        for b in priority:
-            if b not in out:
-                out.append(b)
-        if cur and cur not in out:
-            out.append(cur)
-        for b in default:
-            if b not in out:
-                out.append(b)
-        return out
-
-    def _auto_detect_get_parities(self):
-        """
-        Parities to scan.
-        Priority: none, even first (then current if different, then odd).
-        """
-        priority = ["none", "even"]
-        default = ["odd"]
-
-        cur = ""
-        try:
-            cur = str(self.cmb_parity.get()).strip().lower()
-        except Exception:
-            cur = ""
-
-        out = []
-        for p in priority:
-            if p not in out:
-                out.append(p)
-        if cur and cur not in out:
-            out.append(cur)
-        for p in default:
-            if p not in out:
-                out.append(p)
-        return out
-
-    def _auto_detect_try_once(self, com_port, baudrate, parity, slave_address):
-        """
-        Run one fast modpoll attempt and return (ok, summary).
-        ok=True means we saw a real response (register line or illegal-* response).
-        """
-        if not os.path.exists(self.modpoll_path):
-            return False, "modpoll.exe not found"
-
-        # IMPORTANT: Auto-detect should ignore all other settings.
-        # Only scan: COM port + baudrate + parity + address.
-        # Auto-detect should be minimal (as requested):
-        # modpoll COMx -b9600 -pnone -a52
-        #
-        # But for scanning we MUST poll once (-1), otherwise modpoll keeps running
-        # and we'd only hit the timeout and never see a response line.
-        #
-        # NOTE: We intentionally do NOT add extra flags like -d/-s/-r/-c/-t here.
-        cmd = [
-            self.modpoll_path,
-            self.format_com_port(com_port),
-            f"-b{baudrate}",
-            f"-p{parity}",
-            f"-a{slave_address}",
-            "-1",
-        ]
-
-        # Run it with a short timeout (fast scan)
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        creationflags = subprocess.CREATE_NO_WINDOW
-
-        try:
-            p = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                shell=False,
-                startupinfo=startupinfo,
-                creationflags=creationflags,
-            )
-            # Fast scan: hard 5s per attempt (as requested)
-            out, _ = p.communicate(timeout=5.0)
-        except subprocess.TimeoutExpired:
-            try:
-                p.terminate()
-            except Exception:
-                pass
-            try:
-                p.kill()
-            except Exception:
-                pass
-            return False, "timeout"
-        except Exception as e:
-            return False, str(e)
-
-        text_out = out or ""
-        low = text_out.lower()
-
-        # Success signals:
-        # - register line like "[100]: 123"
-        # - illegal-* exception response (device responded, but wrong register/function)
-        if re.search(r"^\\[\\s*\\d+\\s*\\]\\s*:", text_out, flags=re.M):
-            return True, "register response"
-        if "illegal function exception response" in low:
-            return True, "illegal function (responding)"
-        if "illegal data address exception response" in low:
-            return True, "illegal address (responding)"
-        if "illegal data value exception response" in low:
-            return True, "illegal value (responding)"
-
-        return False, "no response"
-
-    def start_auto_detect(self):
-        """Fast scan across COM/baud/parity and print where it responds."""
-        if getattr(self, "is_polling", False):
-            self._write_to_terminal("Stop polling before auto-detect.", "accent")
-            return
-        if getattr(self, "is_auto_detecting", False):
-            self._write_to_terminal("Auto-detect is already running.", "accent")
-            return
-
-        # Always use the address typed in the Basic tab (-a)
-        slave_address = ""
-        try:
-            slave_address = str(self.entry_slave_address.get()).strip()
-        except Exception:
-            slave_address = ""
-        if not slave_address.isdigit():
-            self._write_to_terminal("Auto-detect: invalid Address (-a). Enter a numeric address (e.g. 52).", "error")
-            return
-
-        self._write_to_terminal(f"Auto-detect using address: -a{slave_address}", "normal")
-
-        ports = self._auto_detect_get_ports()
-
-        # Scan order should match:
-        # 9600 none -> 19200 none -> 9600 even -> 19200 even -> 9600 odd -> 19200 odd
-        combos = [
-            ("9600", "none"),
-            ("19200", "none"),
-            ("9600", "even"),
-            ("19200", "even"),
-            ("9600", "odd"),
-            ("19200", "odd"),
-        ]
-
-        if not ports:
-            self._write_to_terminal("Auto-detect: no COM ports found. Click Refresh or type COMx manually.", "error")
-            return
-
-        self.is_auto_detecting = True
-        try:
-            self.root.after(0, self.update_buttons)
-        except Exception:
-            pass
-        self._write_to_terminal("═" * 70, "normal")
-        self._write_to_terminal(f"Auto-detect started (ports={len(ports)}, tries_per_port={len(combos)}).", "normal")
-        self._write_to_terminal("Scanning... (click STOP to cancel)", "accent")
-
-        def worker():
-            found = None  # (port, baud, parity, summary)
-            tried = 0
-            pause_s = 0.25  # pause between every auto-detect modpoll attempt
-
-            for port in ports:
-                if not self.is_auto_detecting:
-                    break
-                for baud, par in combos:
-                    if not self.is_auto_detecting:
-                        break
-                    tried += 1
-                    # Show the exact command being tried (throttle to avoid huge logs)
-                    if tried <= 30 or tried % 25 == 0:
-                        self._write_to_terminal(
-                            f"Trying: modpoll {port} -b{baud} -p{par} -a{slave_address} -1",
-                            "normal",
-                        )
-
-                    ok, summary = self._auto_detect_try_once(port, baud, par, slave_address)
-                    if tried == 1 or tried % 15 == 0:
-                        self._write_to_terminal(f"Auto-detect progress: tried {tried}...", "normal")
-                    if ok:
-                        found = (port, baud, par, summary)
-                        break
-
-                    # Pause between attempts (prevents hammering adapters/devices)
-                    if self.is_auto_detecting and pause_s > 0:
-                        try:
-                            time.sleep(pause_s)
-                        except Exception:
-                            pass
-                if found:
-                    break
-
-                # Small pause between ports so USB/COM adapters fully release the handle
-                try:
-                    time.sleep(0.15)
-                except Exception:
-                    pass
-
-            def finish_ui():
-                # Detect if we were cancelled before we clear the flag
-                was_cancelled = (not self.is_auto_detecting)
-                # Always stop flag when finishing
-                self.is_auto_detecting = False
-                try:
-                    self.update_buttons()
-                except Exception:
-                    pass
-
-                if found:
-                    port, baud, par, summary = found
-                    self._write_to_terminal("✓ AUTO-DETECT FOUND RESPONSE", "info")
-                    self._write_to_terminal(f"COM={port}  Baud={baud}  Parity={par}  ({summary})", "response_ok")
-
-                    # Apply into UI fields
-                    try:
-                        self.cmb_comport.set(port)
-                    except Exception:
-                        pass
-                    try:
-                        self.cmb_baudrate.set(str(baud))
-                    except Exception:
-                        pass
-                    try:
-                        self.cmb_parity.set(str(par))
-                    except Exception:
-                        pass
-
-                    try:
-                        self.build_and_display_command()
-                    except Exception:
-                        pass
-                    try:
-                        self.trigger_status_indicator("green")
-                    except Exception:
-                        pass
-                else:
-                    if was_cancelled and tried > 0:
-                        self._write_to_terminal(f"Auto-detect cancelled after {tried} tries.", "accent")
-                    else:
-                        self._write_to_terminal(f"Auto-detect finished: no response after {tried} tries.", "error")
-                        try:
-                            self.trigger_status_indicator("red")
-                        except Exception:
-                            pass
-
-                self._write_to_terminal("═" * 70, "normal")
-
-            try:
-                self.root.after(0, finish_ui)
-            except Exception:
-                pass
-
-        threading.Thread(target=worker, daemon=True).start()
 
     def append_log(self, message, tag=None):
-        # CustomTkinter textbox with proper tag support
-        self.txt_log.configure(state="normal")
-        if tag:
-            self.txt_log._textbox.insert("end", f"{message}\n", tag)
-        else:
-            self.txt_log._textbox.insert("end", f"{message}\n")
-        
-        # Always scroll to end for real-time feel
-        self.txt_log.see("end")
-        self.txt_log.configure(state="disabled")
+        # Backwards-compatible helper: route through fast terminal writer
+        self._write_to_terminal(message, tag)
 
     def append_log_direct(self, message, tag=None):
         """Direct logging like a real terminal with proper color tags"""
-        try:
-            self.txt_log.configure(state="normal")
-            
-            # Insert with tag (supports custom tags like 'attempt')
-            if tag:
-                self.txt_log._textbox.insert("end", f"{message}\n", tag)
-            else:
-                self.txt_log._textbox.insert("end", f"{message}\n")
-            
-            # Scroll to end like a real terminal
-            self.txt_log.see("end")
-            self.txt_log.configure(state="disabled")
-            
-            # Force immediate update like native CMD
-            self.root.update_idletasks()
-        except Exception as e:
-            # Fallback to queue if direct logging fails
-            self.log_queue.put((tag or 'normal', message))
+        # Keep as alias; the terminal writer is already optimized + thread-safe
+        self._write_to_terminal(message, tag)
 
     def update_log(self):
         """
@@ -3509,9 +3175,20 @@ Ready to poll..."""
     def refresh_units_table(self):
         """Rebuild the Units table from stored rows, applying current filters."""
         try:
+            cols = list(getattr(self.units_tree, "__getitem__", lambda _k: [])("columns") or [])
+            # Fallback if Treeview indexing fails for any reason
+            if not cols:
+                cols = ["unit_id", "unit_name", "driver_type", "driver_addr", "regulator_type", "com_port", "baudrate", "parity", "ip_address"]
+
+            # Figure out the baudrate column index safely (fixes previous off-by-one/parity mixup)
+            try:
+                baud_idx = cols.index("baudrate")
+            except ValueError:
+                baud_idx = 6
+
             # Determine filtered view
             if self.hide_no_baudrate:
-                filtered = [r for r in (self.units_rows or []) if len(r) > 7 and str(r[7]).strip()]
+                filtered = [r for r in (self.units_rows or []) if len(r) > baud_idx and str(r[baud_idx]).strip()]
             else:
                 filtered = list(self.units_rows or [])
 
@@ -3521,11 +3198,27 @@ Ready to poll..."""
 
             # Insert filtered with row striping
             for idx, r in enumerate(filtered):
+                # Normalize row length to match the Treeview columns exactly
+                if isinstance(r, dict):
+                    row_values = [r.get(c, "") for c in cols]
+                elif isinstance(r, (list, tuple)):
+                    row_values = list(r[: len(cols)])
+                    if len(row_values) < len(cols):
+                        row_values.extend([""] * (len(cols) - len(row_values)))
+                else:
+                    # Unknown row type; best-effort: stringify into first column
+                    row_values = [str(r)] + [""] * (len(cols) - 1)
+
                 tag = 'evenrow' if idx % 2 == 0 else 'oddrow'
-                self.units_tree.insert('', 'end', values=r, tags=(tag,))
+                self.units_tree.insert('', 'end', values=row_values, tags=(tag,))
 
             # Auto-size columns after data load
             self.root.after(100, self.auto_size_columns)
+            # Keep custom separators aligned after refresh (especially after big data changes)
+            try:
+                self.root.after(120, self.update_units_column_separators)
+            except Exception:
+                pass
         except Exception:
             # Non-fatal UI update error; ignore
             pass
